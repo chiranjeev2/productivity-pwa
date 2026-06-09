@@ -14,13 +14,25 @@ export const SocketProvider = ({ children }) => {
     // Only connect if the user is actually logged in
     if (!user) return;
 
-    // Connect to the Node backend
-    const newSocket = io(import.meta.env.VITE_API_URL?.replace('/api/v1', '') || 'http://localhost:5000');
+    // Grab the Vercel URL and strip the api path to get the root server URL
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
+    const backendUrl = apiUrl.replace('/api/v1', '');
+
+    // Initialize the connection WITH cross-origin production settings
+    const newSocket = io(backendUrl, {
+        withCredentials: true,
+        transports: ['websocket', 'polling'] // Crucial for Vercel -> Render connection
+    });
 
     newSocket.on('connect', () => {
       setIsConnected(true);
+      console.log("🟢 Live Sync Connected");
       // Put the user in their private room
       newSocket.emit('join_user_room', user._id);
+    });
+
+    newSocket.on('connect_error', (err) => {
+      console.error("🔴 Live Sync Error:", err.message);
     });
 
     newSocket.on('disconnect', () => {
