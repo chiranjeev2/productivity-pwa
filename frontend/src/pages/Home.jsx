@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useTheme } from '../context/ThemeContext';
+import './Home.css'; // Connects the new hover effects!
 
 const Home = () => {
   const { isDarkMode } = useTheme();
@@ -8,6 +9,13 @@ const Home = () => {
   const [time, setTime] = useState(new Date());
   const [waterGlasses, setWaterGlasses] = useState(0);
   const DAILY_GOAL = 8;
+
+  // State for Tasks (Temporary UI state)
+  const [tasks, setTasks] = useState([
+    { id: 1, text: 'Review DSA Graphs & Trees', completed: false },
+    { id: 2, text: 'Complete Sigma MERN module', completed: true }
+  ]);
+  const [newTaskText, setNewTaskText] = useState('');
 
   // 1. Live Clock Effect
   useEffect(() => {
@@ -66,7 +74,6 @@ const Home = () => {
                 aspectRatio: '1',
                 borderRadius: '8px',
                 border: 'none',
-                // Smooth blue color for filled glasses, subtle gray for empty
                 background: index < waterGlasses ? '#3b82f6' : (isDarkMode ? '#334155' : '#f1f5f9'),
                 cursor: 'pointer',
                 transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
@@ -86,7 +93,7 @@ const Home = () => {
         </p>
       </div>
 
-      {/* 🔴 TODAY'S TASKS (Container for next step) */}
+      {/* 🔴 TODAY'S TASKS UI */}
       <div style={{ 
         background: cardBg, 
         padding: '1.5rem', 
@@ -94,9 +101,51 @@ const Home = () => {
         border: `1px solid ${borderColor}`,
       }}>
         <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.2rem' }}>✅ Today's Focus</h3>
-        <p style={{ color: isDarkMode ? '#94a3b8' : '#64748b', fontStyle: 'italic' }}>
-          Your task list and hover effects will be connected here shortly.
-        </p>
+        
+        {/* Input Field */}
+        <input 
+          type="text"
+          className="task-input"
+          placeholder="Add a new task... (Press Enter)"
+          value={newTaskText}
+          onChange={(e) => setNewTaskText(e.target.value)}
+          style={{
+            background: isDarkMode ? '#0f172a' : '#f8fafc',
+            border: `1px solid ${borderColor}`,
+            color: textColor
+          }}
+        />
+
+        {/* Task List */}
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          {tasks.map(task => (
+            <div 
+              key={task.id} 
+              className="task-item"
+              style={{
+                background: isDarkMode ? '#334155' : '#f1f5f9',
+                opacity: task.completed ? 0.6 : 1
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <input 
+                  type="checkbox" 
+                  checked={task.completed}
+                  readOnly
+                  style={{ transform: 'scale(1.2)', cursor: 'pointer' }}
+                />
+                <span style={{ 
+                  textDecoration: task.completed ? 'line-through' : 'none',
+                  fontWeight: task.completed ? 'normal' : '500'
+                }}>
+                  {task.text}
+                </span>
+              </div>
+              <button className="delete-btn" title="Delete Task">🗑️</button>
+            </div>
+          ))}
+        </div>
+
       </div>
 
     </div>

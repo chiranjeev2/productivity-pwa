@@ -1,0 +1,50 @@
+/* The 7-column grid for the calendar */
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+  margin-top: 1rem;
+}
+
+/* Day of the week text (S, M, T, W...) */
+.calendar-day-header {
+  text-align: center;
+  font-weight: bold;
+  font-size: 0.9rem;
+  padding-bottom: 8px;
+}
+
+/* Individual date boxes */
+.calendar-cell {
+  aspect-ratio: 1; /* Makes them perfectly square */
+  border-radius: 8px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.calendar-cell:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  z-index: 10;
+}
+
+.date-number {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+/* Container for the tiny water/task icons inside the date box */
+.badge-container {
+  display: flex;
+  gap: 2px;
+  justify-content: center;
+}
+
+.activity-badge {
+  font-size: 0.75rem;
+}
