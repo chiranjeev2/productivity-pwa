@@ -12,6 +12,13 @@
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
 }
 
+/* Flex container for the text inside the card */
+.goal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
 /* The background track for the progress bar */
 .progress-track {
   width: 100%;
@@ -26,4 +33,19 @@
   height: 100%;
   border-radius: 4px;
   transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 📱 MOBILE FIXES: Stack text vertically if screen is small */
+@media (max-width: 480px) {
+  .goal-card {
+    padding: 1rem;
+  }
+  .goal-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+  .goal-header span {
+    font-size: 0.95rem !important;
+  }
 }
