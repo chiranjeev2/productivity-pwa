@@ -48,3 +48,96 @@
 .activity-badge {
   font-size: 0.75rem;
 }
+/* The 7-column grid for the calendar */
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+  margin-top: 1rem;
+}
+
+/* Header with Month Name and Arrows */
+.calendar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.nav-btn {
+  background: none;
+  border: none;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 8px 12px;
+  border-radius: 8px;
+  transition: background 0.2s ease;
+}
+
+.nav-btn:hover {
+  background: rgba(150, 150, 150, 0.2);
+}
+
+/* Day of the week text (S, M, T, W...) */
+.calendar-day-header {
+  text-align: center;
+  font-weight: bold;
+  font-size: 0.9rem;
+  padding-bottom: 8px;
+}
+
+/* Individual date boxes */
+.calendar-cell {
+  aspect-ratio: 1;
+  border-radius: 8px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  overflow: hidden; /* Prevents badges from breaking out */
+}
+
+.calendar-cell:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  z-index: 10;
+}
+
+.date-number {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.badge-container {
+  display: flex;
+  gap: 2px;
+  justify-content: center;
+  flex-wrap: wrap; /* Forces badges to next line if squished */
+}
+
+.activity-badge {
+  font-size: 0.75rem;
+}
+
+/* 📱 MOBILE FIXES */
+@media (max-width: 480px) {
+  .calendar-grid {
+    gap: 4px; /* Shrinks the space between days */
+  }
+  .calendar-cell {
+    padding: 2px;
+  }
+  .date-number {
+    font-size: 0.8rem;
+  }
+  .activity-badge {
+    font-size: 0.55rem; /* Shrinks emojis so they fit side-by-side */
+  }
+  .calendar-day-header {
+    font-size: 0.75rem;
+  }
+}
