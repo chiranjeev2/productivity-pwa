@@ -1,0 +1,64 @@
+/* Keeps the nav stuck to the bottom of the screen */
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 70px;
+  background-color: #ffffff;
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.05);
+  z-index: 1000;
+  border-top-left-radius: 20px;
+  border-top-right-radius: 20px;
+}
+
+/* Base styling for each button */
+.nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-decoration: none;
+  color: #888;
+  padding: 8px 16px;
+  border-radius: 12px;
+  transition: all 0.3s ease; /* The smooth animation */
+}
+
+.nav-icon {
+  font-size: 24px;
+  margin-bottom: 4px;
+  transition: transform 0.3s ease;
+}
+
+.nav-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* HOVER EFFECTS (For Desktop) */
+.nav-item:hover {
+  background-color: #f0f4f8;
+  color: #333;
+}
+.nav-item:hover .nav-icon {
+  transform: translateY(-3px); /* Makes the icon pop up slightly */
+}
+
+/* ACTIVE STATE (When you are on that page) */
+.nav-item.active {
+  color: #007bff; /* Primary blue color */
+}
+.nav-item.active .nav-icon {
+  transform: scale(1.1); /* Makes the active icon slightly bigger */
+}
+
+/* Global Page Container to prevent content from hiding behind the footer */
+.page-container {
+  padding-bottom: 80px; 
+  padding-top: 20px;
+  max-width: 800px;
+  margin: 0 auto;
+}
