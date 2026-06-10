@@ -37,39 +37,55 @@ const Goals = () => {
     if (user) fetchGoals();
   }, [API_URL, user]);
 
+  // Optimistic Goal Creation
   const handleAddGoal = async (e) => {
     e.preventDefault();
     if (!newTitle.trim()) return;
 
+    const tempId = Date.now().toString();
+    const assignedColor = newType === 'short-term' ? '#3b82f6' : '#10b981';
+    
+    const temporaryGoal = {
+      _id: tempId,
+      title: newTitle,
+      type: newType,
+      progress: 0,
+      color: assignedColor
+    };
+
+    setGoals([temporaryGoal, ...goals]);
+    const titleToSubmit = newTitle;
+    const typeToSubmit = newType;
+    setNewTitle('');
+
     try {
       const token = localStorage.getItem('token');
-      const assignedColor = newType === 'short-term' ? '#3b82f6' : '#10b981';
-
       const response = await fetch(`${API_URL}/goals`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ title: newTitle, type: newType, progress: 0, color: assignedColor })
+        body: JSON.stringify({ title: titleToSubmit, type: typeToSubmit, progress: 0, color: assignedColor })
       });
 
       if (response.ok) {
         const addedGoal = await response.json();
-        setGoals([addedGoal, ...goals]);
-        setNewTitle('');
+        setGoals(prev => prev.map(g => g._id === tempId ? addedGoal : g));
       }
     } catch (error) {
       console.error("Failed to add goal:", error);
+      setGoals(prev => prev.filter(g => g._id !== tempId));
     }
   };
 
-  // 🔴 NEW: Delete Functionality
+  // Optimistic Goal Deletion
   const handleDeleteGoal = async (goalId, e) => {
-    e.stopPropagation(); // Prevents the modal from opening when you click the trash can
-    
-    // Optional: Add a quick confirmation prompt
+    e.stopPropagation();
     if (!window.confirm("Are you sure you want to delete this goal?")) return;
+
+    const backupGoals = [...goals];
+    setGoals(goals.filter(g => g._id !== goalId));
 
     try {
       const token = localStorage.getItem('token');
@@ -78,11 +94,10 @@ const Goals = () => {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
-      if (response.ok) {
-        setGoals(goals.filter(g => g._id !== goalId));
-      }
+      if (!response.ok) throw new Error();
     } catch (error) {
       console.error("Failed to delete goal:", error);
+      setGoals(backupGoals);
     }
   };
 
@@ -94,6 +109,12 @@ const Goals = () => {
 
   const saveProgressUpdate = async () => {
     if (!activeGoal) return;
+    
+    // Optimistic progress state update
+    const previousGoals = [...goals];
+    setGoals(goals.map(g => g._id === activeGoal._id ? { ...g, progress: sliderValue } : g));
+    setIsModalOpen(false);
+
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/goals/${activeGoal._id}`, {
@@ -105,14 +126,14 @@ const Goals = () => {
         body: JSON.stringify({ progress: sliderValue })
       });
 
-      if (response.ok) {
-        const updatedGoal = await response.json();
-        setGoals(goals.map(g => g._id === updatedGoal._id ? updatedGoal : g));
-        setIsModalOpen(false);
-        setActiveGoal(null);
-      }
+      if (!response.ok) throw new Error();
+      const updatedGoal = await response.json();
+      setGoals(prev => prev.map(g => g._id === updatedGoal._id ? updatedGoal : g));
     } catch (error) {
       console.error("Failed to update progress:", error);
+      setGoals(previousGoals);
+    } finally {
+      setActiveGoal(null);
     }
   };
 
@@ -127,13 +148,11 @@ const Goals = () => {
 
   return (
     <div style={{ color: textColor, maxWidth: '600px', margin: '0 auto', position: 'relative' }}>
-      
       <div style={{ marginBottom: '2rem', textAlign: 'center' }}>
         <h1 style={{ fontSize: '2rem', margin: '0 0 0.5rem 0', fontWeight: '800' }}>🎯 Vision Board</h1>
         <p style={{ fontSize: '1.1rem', color: mutedText, margin: 0, fontWeight: '500' }}>Track your strategic milestones.</p>
       </div>
 
-      {/* 🔴 UPDATED: Form now uses the CSS class for mobile stacking */}
       <form onSubmit={handleAddGoal} style={{ marginBottom: '2rem', background: cardBg, padding: '1rem', borderRadius: '12px', border: `1px solid ${borderColor}` }}>
         <div className="goal-form-container">
           <input 
@@ -161,16 +180,13 @@ const Goals = () => {
             <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.2rem' }}>🚀 Short-Term</h3>
             {shortTermGoals.length === 0 && <p style={{ color: mutedText, fontStyle: 'italic' }}>No short-term goals yet.</p>}
             {shortTermGoals.map(goal => (
-              <div key={goal._id} onClick={() => openProgressModal(goal)} style={{ background: cardBg, border: `1px solid ${borderColor}`, padding: '1rem', borderRadius: '12px', marginBottom: '1rem', cursor: 'pointer', transition: 'transform 0.2s' }}>
+              <div key={goal._id} onClick={() => openProgressModal(goal)} style={{ background: cardBg, border: `1px solid ${borderColor}`, padding: '1rem', borderRadius: '12px', marginBottom: '1rem', cursor: 'pointer' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <span style={{ fontWeight: '600', lineHeight: '1.2' }}>{goal.title}</span>
                     <span style={{ fontWeight: 'bold', color: goal.color, fontSize: '0.9rem' }}>{goal.progress}% Completed</span>
                   </div>
-                  {/* 🔴 NEW: Delete Button */}
-                  <button className="goal-delete-btn" onClick={(e) => handleDeleteGoal(goal._id, e)} title="Delete Goal">
-                    🗑️
-                  </button>
+                  <button className="goal-delete-btn" onClick={(e) => handleDeleteGoal(goal._id, e)} title="Delete Goal">🗑️</button>
                 </div>
                 <div style={{ height: '8px', borderRadius: '4px', background: trackBg, overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${goal.progress}%`, background: goal.color, transition: 'width 0.5s ease-out' }}></div>
@@ -183,16 +199,13 @@ const Goals = () => {
             <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.2rem' }}>🏔️ Long-Term</h3>
             {longTermGoals.length === 0 && <p style={{ color: mutedText, fontStyle: 'italic' }}>No long-term goals yet.</p>}
             {longTermGoals.map(goal => (
-              <div key={goal._id} onClick={() => openProgressModal(goal)} style={{ background: cardBg, border: `1px solid ${borderColor}`, padding: '1rem', borderRadius: '12px', marginBottom: '1rem', cursor: 'pointer', transition: 'transform 0.2s' }}>
+              <div key={goal._id} onClick={() => openProgressModal(goal)} style={{ background: cardBg, border: `1px solid ${borderColor}`, padding: '1rem', borderRadius: '12px', marginBottom: '1rem', cursor: 'pointer' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <span style={{ fontWeight: '600', lineHeight: '1.2' }}>{goal.title}</span>
                     <span style={{ fontWeight: 'bold', color: goal.color, fontSize: '0.9rem' }}>{goal.progress}% Completed</span>
                   </div>
-                  {/* 🔴 NEW: Delete Button */}
-                  <button className="goal-delete-btn" onClick={(e) => handleDeleteGoal(goal._id, e)} title="Delete Goal">
-                    🗑️
-                  </button>
+                  <button className="goal-delete-btn" onClick={(e) => handleDeleteGoal(goal._id, e)} title="Delete Goal">🗑️</button>
                 </div>
                 <div style={{ height: '8px', borderRadius: '4px', background: trackBg, overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${goal.progress}%`, background: goal.color, transition: 'width 0.5s ease-out' }}></div>
@@ -203,7 +216,6 @@ const Goals = () => {
         </>
       )}
 
-      {/* PROGRESS MODAL */}
       {isModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
           <div style={{ background: cardBg, padding: '2rem', borderRadius: '16px', width: '90%', maxWidth: '400px', border: `1px solid ${borderColor}`, boxShadow: '0 10px 25px rgba(0,0,0,0.5)' }}>
