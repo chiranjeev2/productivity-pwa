@@ -22,7 +22,7 @@ const Home = () => {
   const [newTaskText, setNewTaskText] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load initial data from DB (Both Tasks AND Today's real Water intake)
+  // Load initial data from DB
   useEffect(() => {
     const fetchInitialData = async () => {
       try {
@@ -39,7 +39,7 @@ const Home = () => {
           setTasks(fetchedTasks);
         }
 
-        // 2. Fetch today's log to grab cross-device water intake
+        // 2. Fetch today's log for cross-device hydration
         const calRes = await fetch(`${API_URL}/calendar`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
@@ -69,7 +69,7 @@ const Home = () => {
         const token = localStorage.getItem('token');
         if (!token) return;
 
-        const tasksCompleted = tasks.filter(t => t.completed).length;
+        const tasksCompleted = Math.max(0, tasks.filter(t => t.completed).length);
         const totalTasks = tasks.length;
 
         await fetch(`${API_URL}/calendar/sync`, {
@@ -98,7 +98,7 @@ const Home = () => {
     return () => clearInterval(timer);
   }, []);
 
-  // OPTIMISTIC TASK MANAGEMENT (Instant UI Updates)
+  // OPTIMISTIC TASK MANAGEMENT
   const handleAddTask = async (e) => {
     e.preventDefault();
     if (!newTaskText.trim()) return;
@@ -173,7 +173,6 @@ const Home = () => {
   const borderColor = isDarkMode ? '#334155' : '#e2e8f0';
 
   return (
-    /* 🔴 FIXED: Added paddingBottom: '100px' to allow scrolling room past the fixed mobile navigation bar */
     <div style={{ color: textColor, maxWidth: '600px', margin: '0 auto', paddingBottom: '100px' }}>
       
       {/* HEADER */}
@@ -191,14 +190,13 @@ const Home = () => {
           <span style={{ fontSize: '1rem', fontWeight: 'bold', color: '#3b82f6' }}>{waterGlasses} / {DAILY_GOAL}</span>
         </h3>
         
-        {/* 🔴 FIXED: Stripped inline flex declarations so it relies cleanly on the responsive grid styles from Home.css */}
         <div className="water-grid">
           {[...Array(DAILY_GOAL)].map((_, index) => (
             <button
               key={index}
               onClick={() => setWaterGlasses(index + 1)}
               style={{
-                aspectRatio: '1', borderRadius: '8px', border: 'none',
+                borderRadius: '8px', border: 'none',
                 background: index < waterGlasses ? '#3b82f6' : (isDarkMode ? '#334155' : '#f1f5f9'),
                 cursor: 'pointer', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                 transform: index < waterGlasses ? 'scale(1.05)' : 'scale(1)',
@@ -215,16 +213,21 @@ const Home = () => {
       <div style={{ background: cardBg, padding: '1.5rem', borderRadius: '16px', border: `1px solid ${borderColor}` }}>
         <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.2rem' }}>✅ Today's Focus</h3>
         
-        <form onSubmit={handleAddTask} style={{ display: 'flex', gap: '8px', marginBottom: '1rem' }}>
+        {/* FORM WIRED TO CSS CLASSES */}
+        <form onSubmit={handleAddTask} className="task-form">
           <input 
             type="text"
             className="task-input"
             placeholder="Add a new task..."
             value={newTaskText}
             onChange={(e) => setNewTaskText(e.target.value)}
-            style={{ background: isDarkMode ? '#0f172a' : '#f8fafc', border: `1px solid ${borderColor}`, color: textColor, marginBottom: 0, flex: 1 }}
+            style={{ 
+              background: isDarkMode ? '#0f172a' : '#f8fafc', 
+              border: `1px solid ${borderColor}`, 
+              color: textColor 
+            }}
           />
-          <button type="submit" style={{ padding: '0 20px', borderRadius: '8px', border: 'none', background: '#3b82f6', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}>
+          <button type="submit" className="task-submit-btn">
             Add
           </button>
         </form>

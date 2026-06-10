@@ -1,10 +1,9 @@
 /* ==========================================================================
-   HYDRO WIDGET OPTIMIZATIONS (Fixes the vertical stack in image_c7e2b6.png)
+   HYDRO WIDGET OPTIMIZATIONS
    ========================================================================== */
 
 .water-grid {
   display: grid !important;
-  /* Default: 8 equal columns across the row for desktop view */
   grid-template-columns: repeat(8, 1fr) !important; 
   gap: 10px !important;
   width: 100% !important;
@@ -14,24 +13,57 @@
   margin: 1rem 0 0 0 !important;
 }
 
-/* Force the buttons inside the grid to expand and keep their proportions */
 .water-grid button {
   width: 100% !important;
   aspect-ratio: 1 / 1 !important;
   box-sizing: border-box !important;
 }
 
-/* Responsive breakpoint for mobile screens */
 @media (max-width: 550px) {
   .water-grid {
-    /* Transitions seamlessly into 2 clean rows of 4 cubes on mobile devices */
     grid-template-columns: repeat(4, 1fr) !important;
     gap: 12px !important;
   }
 }
 
 /* ==========================================================================
-   TASK ITEM & INTERACTION TARGETS
+   TASK ENTRY FORM (Fixes the squished input field layout bug)
+   ========================================================================== */
+
+.task-form {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  width: 100% !important;
+  margin-bottom: 1.5rem !important;
+  box-sizing: border-box !important;
+}
+
+.task-input {
+  flex: 1 !important;
+  width: 100% !important;
+  min-width: 0 !important; /* CRITICAL: Forces browser to let input expand via flexbox */
+  padding: 10px 14px !important;
+  border-radius: 8px !important;
+  font-size: 15px !important;
+  outline: none !important;
+  box-sizing: border-box !important;
+}
+
+.task-submit-btn {
+  padding: 10px 22px !important;
+  border-radius: 8px !important;
+  border: none !important;
+  background: #3b82f6 !important;
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  cursor: pointer !important;
+  white-space: nowrap !important;
+  transition: background 0.2s ease !important;
+}
+
+/* ==========================================================================
+   TASK LIST ITEMS
    ========================================================================== */
 
 .task-item {
