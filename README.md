@@ -2,8 +2,9 @@
 
 ProdPro is a high-performance, full-stack Progressive Web App (PWA) designed for seamless real-time habit tracking, task execution, and milestone tracking. Built using the decoupled MERN architecture, the application features cross-device synchronization and desktop-grade offline execution wrapper scripts.
 
-Live Frontend: [Your Vercel URL Here]
-Live Backend API: [Your Render URL Here]
+Live Frontend: https://productivity-pwa-chiranjeev2s-projects.vercel.app
+Live Backend API: https://prodpro-backend.onrender.com
+Live website link: https://productivity-pwac.vercel.app/
 
 ---
 
