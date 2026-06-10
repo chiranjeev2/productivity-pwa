@@ -10,21 +10,18 @@ const Home = () => {
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
 
   // -----------------------------------------
-  // CLOCK & WATER STATE (Now with Memory!)
+  // CLOCK & WATER STATE
   // -----------------------------------------
   const [time, setTime] = useState(new Date());
   const DAILY_GOAL = 8;
   
-  // Get today's date string (e.g., "Wed Jun 10 2026")
   const todayKey = new Date().toDateString();
 
-  // Load water from phone memory so it survives refresh
   const [waterGlasses, setWaterGlasses] = useState(() => {
     const savedWater = localStorage.getItem(`water_${todayKey}`);
     return savedWater ? parseInt(savedWater) : 0;
   });
 
-  // Save water to phone memory every time you click a glass
   useEffect(() => {
     localStorage.setItem(`water_${todayKey}`, waterGlasses.toString());
   }, [waterGlasses, todayKey]);
@@ -68,9 +65,56 @@ const Home = () => {
     if (user) fetchTasks();
   }, [API_URL, user]);
 
-  // 🔴 FIXED: Changed from keypress to a proper form submission
+  // -----------------------------------------
+  // 🔴 NEW: BACKGROUND CALENDAR SYNC ENGINE
+  // -----------------------------------------
+  useEffect(() => {
+    // Prevent syncing while the initial data is still loading
+    if (isLoading) return;
+
+    const syncToCalendar = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+
+        // Create exactly the YYYY-MM-DD format the Calendar expects
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const day = String(today.getDate()).padStart(2, '0');
+        const dateString = `${year}-${month}-${day}`;
+
+        const tasksCompleted = tasks.filter(t => t.completed).length;
+        const totalTasks = tasks.length;
+
+        // Silently push the current stats to the backend DailyLog
+        await fetch(`${API_URL}/calendar/sync`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            dateString,
+            waterIntake: waterGlasses,
+            tasksCompleted,
+            totalTasks
+          })
+        });
+      } catch (error) {
+        console.error("Silent calendar sync failed:", error);
+      }
+    };
+
+    // Trigger the sync every time water or tasks are updated!
+    syncToCalendar();
+  }, [waterGlasses, tasks, isLoading, API_URL]);
+
+  // -----------------------------------------
+  // TASK HANDLERS
+  // -----------------------------------------
   const handleAddTask = async (e) => {
-    e.preventDefault(); // Prevents page reload
+    e.preventDefault();
     if (!newTaskText.trim()) return;
 
     try {
@@ -173,7 +217,6 @@ const Home = () => {
       <div style={{ background: cardBg, padding: '1.5rem', borderRadius: '16px', border: `1px solid ${borderColor}` }}>
         <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.2rem' }}>✅ Today's Focus</h3>
         
-        {/* 🔴 FIXED: Wrapped input in a form with a mobile-friendly submit button */}
         <form onSubmit={handleAddTask} style={{ display: 'flex', gap: '8px', marginBottom: '1rem' }}>
           <input 
             type="text"
@@ -185,7 +228,7 @@ const Home = () => {
               background: isDarkMode ? '#0f172a' : '#f8fafc',
               border: `1px solid ${borderColor}`,
               color: textColor,
-              marginBottom: 0, // Removes old margin
+              marginBottom: 0,
               flex: 1
             }}
           />
