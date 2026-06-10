@@ -1,51 +1,37 @@
-/* Container for the goal cards */
-.goal-card {
-  padding: 1.2rem;
-  border-radius: 12px;
-  margin-bottom: 1rem;
-  transition: all 0.3s ease;
-  cursor: pointer;
-}
-
-.goal-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
-}
-
-/* Flex container for the text inside the card */
-.goal-header {
+/* Container for the Add Goal form */
+.goal-form-container {
   display: flex;
-  justify-content: space-between;
+  gap: 10px;
   align-items: center;
 }
 
-/* The background track for the progress bar */
-.progress-track {
-  width: 100%;
-  height: 8px;
-  border-radius: 4px;
-  margin-top: 12px;
-  overflow: hidden;
-}
-
-/* The actual filling part of the progress bar */
-.progress-fill {
-  height: 100%;
-  border-radius: 4px;
-  transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-/* 📱 MOBILE FIXES: Stack text vertically if screen is small */
-@media (max-width: 480px) {
-  .goal-card {
-    padding: 1rem;
-  }
-  .goal-header {
+/* On mobile screens, stack the form vertically so it doesn't squish */
+@media (max-width: 500px) {
+  .goal-form-container {
     flex-direction: column;
-    align-items: flex-start;
-    gap: 6px;
+    align-items: stretch;
   }
-  .goal-header span {
-    font-size: 0.95rem !important;
+  
+  .goal-form-container input,
+  .goal-form-container select,
+  .goal-form-container button {
+    width: 100%;
   }
+}
+
+/* Hover effect for the delete button */
+.goal-delete-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 1.2rem;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background 0.2s;
+  opacity: 0.7;
+}
+
+.goal-delete-btn:hover {
+  background: rgba(239, 68, 68, 0.1); /* Faint red background on hover */
+  opacity: 1;
 }

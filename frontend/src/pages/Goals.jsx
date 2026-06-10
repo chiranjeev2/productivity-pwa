@@ -13,7 +13,6 @@ const Goals = () => {
   const [newTitle, setNewTitle] = useState('');
   const [newType, setNewType] = useState('short-term');
 
-  // MODAL STATE
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeGoal, setActiveGoal] = useState(null);
   const [sliderValue, setSliderValue] = useState(0);
@@ -65,14 +64,34 @@ const Goals = () => {
     }
   };
 
-  // OPEN MODAL FUNCTION
+  // 🔴 NEW: Delete Functionality
+  const handleDeleteGoal = async (goalId, e) => {
+    e.stopPropagation(); // Prevents the modal from opening when you click the trash can
+    
+    // Optional: Add a quick confirmation prompt
+    if (!window.confirm("Are you sure you want to delete this goal?")) return;
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/goals/${goalId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (response.ok) {
+        setGoals(goals.filter(g => g._id !== goalId));
+      }
+    } catch (error) {
+      console.error("Failed to delete goal:", error);
+    }
+  };
+
   const openProgressModal = (goal) => {
     setActiveGoal(goal);
     setSliderValue(goal.progress);
     setIsModalOpen(true);
   };
 
-  // SAVE NEW PROGRESS TO DB
   const saveProgressUpdate = async () => {
     if (!activeGoal) return;
     try {
@@ -109,28 +128,31 @@ const Goals = () => {
   return (
     <div style={{ color: textColor, maxWidth: '600px', margin: '0 auto', position: 'relative' }}>
       
-      {/* HEADER & FORM (Unchanged) */}
       <div style={{ marginBottom: '2rem', textAlign: 'center' }}>
         <h1 style={{ fontSize: '2rem', margin: '0 0 0.5rem 0', fontWeight: '800' }}>🎯 Vision Board</h1>
         <p style={{ fontSize: '1.1rem', color: mutedText, margin: 0, fontWeight: '500' }}>Track your strategic milestones.</p>
       </div>
 
-      <form onSubmit={handleAddGoal} style={{ display: 'flex', gap: '8px', marginBottom: '2rem', background: cardBg, padding: '1rem', borderRadius: '12px', border: `1px solid ${borderColor}` }}>
-        <input 
-          type="text" 
-          placeholder="e.g., Complete Sigma MERN Module" 
-          value={newTitle}
-          onChange={(e) => setNewTitle(e.target.value)}
-          style={{ flex: 1, padding: '10px', borderRadius: '8px', border: `1px solid ${borderColor}`, background: isDarkMode ? '#0f172a' : '#f8fafc', color: textColor, outline: 'none' }}
-        />
-        <select value={newType} onChange={(e) => setNewType(e.target.value)} style={{ padding: '10px', borderRadius: '8px', border: `1px solid ${borderColor}`, background: isDarkMode ? '#0f172a' : '#f8fafc', color: textColor, outline: 'none' }}>
-          <option value="short-term">Short Term</option>
-          <option value="long-term">Long Term</option>
-        </select>
-        <button type="submit" style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', background: '#3b82f6', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}>Add</button>
+      {/* 🔴 UPDATED: Form now uses the CSS class for mobile stacking */}
+      <form onSubmit={handleAddGoal} style={{ marginBottom: '2rem', background: cardBg, padding: '1rem', borderRadius: '12px', border: `1px solid ${borderColor}` }}>
+        <div className="goal-form-container">
+          <input 
+            type="text" 
+            placeholder="e.g., Complete MERN Module" 
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            style={{ flex: 1, padding: '10px', borderRadius: '8px', border: `1px solid ${borderColor}`, background: isDarkMode ? '#0f172a' : '#f8fafc', color: textColor, outline: 'none' }}
+          />
+          <select value={newType} onChange={(e) => setNewType(e.target.value)} style={{ padding: '10px', borderRadius: '8px', border: `1px solid ${borderColor}`, background: isDarkMode ? '#0f172a' : '#f8fafc', color: textColor, outline: 'none' }}>
+            <option value="short-term">Short Term</option>
+            <option value="long-term">Long Term</option>
+          </select>
+          <button type="submit" style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', background: '#3b82f6', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}>
+            Add Goal
+          </button>
+        </div>
       </form>
 
-      {/* RENDER GOALS (Now clickable) */}
       {isLoading ? (
         <p style={{ textAlign: 'center', color: mutedText }}>Loading goals...</p>
       ) : (
@@ -140,9 +162,15 @@ const Goals = () => {
             {shortTermGoals.length === 0 && <p style={{ color: mutedText, fontStyle: 'italic' }}>No short-term goals yet.</p>}
             {shortTermGoals.map(goal => (
               <div key={goal._id} onClick={() => openProgressModal(goal)} style={{ background: cardBg, border: `1px solid ${borderColor}`, padding: '1rem', borderRadius: '12px', marginBottom: '1rem', cursor: 'pointer', transition: 'transform 0.2s' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                  <span style={{ fontWeight: '600' }}>{goal.title}</span>
-                  <span style={{ fontWeight: 'bold', color: goal.color }}>{goal.progress}%</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <span style={{ fontWeight: '600', lineHeight: '1.2' }}>{goal.title}</span>
+                    <span style={{ fontWeight: 'bold', color: goal.color, fontSize: '0.9rem' }}>{goal.progress}% Completed</span>
+                  </div>
+                  {/* 🔴 NEW: Delete Button */}
+                  <button className="goal-delete-btn" onClick={(e) => handleDeleteGoal(goal._id, e)} title="Delete Goal">
+                    🗑️
+                  </button>
                 </div>
                 <div style={{ height: '8px', borderRadius: '4px', background: trackBg, overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${goal.progress}%`, background: goal.color, transition: 'width 0.5s ease-out' }}></div>
@@ -156,9 +184,15 @@ const Goals = () => {
             {longTermGoals.length === 0 && <p style={{ color: mutedText, fontStyle: 'italic' }}>No long-term goals yet.</p>}
             {longTermGoals.map(goal => (
               <div key={goal._id} onClick={() => openProgressModal(goal)} style={{ background: cardBg, border: `1px solid ${borderColor}`, padding: '1rem', borderRadius: '12px', marginBottom: '1rem', cursor: 'pointer', transition: 'transform 0.2s' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                  <span style={{ fontWeight: '600' }}>{goal.title}</span>
-                  <span style={{ fontWeight: 'bold', color: goal.color }}>{goal.progress}%</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <span style={{ fontWeight: '600', lineHeight: '1.2' }}>{goal.title}</span>
+                    <span style={{ fontWeight: 'bold', color: goal.color, fontSize: '0.9rem' }}>{goal.progress}% Completed</span>
+                  </div>
+                  {/* 🔴 NEW: Delete Button */}
+                  <button className="goal-delete-btn" onClick={(e) => handleDeleteGoal(goal._id, e)} title="Delete Goal">
+                    🗑️
+                  </button>
                 </div>
                 <div style={{ height: '8px', borderRadius: '4px', background: trackBg, overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${goal.progress}%`, background: goal.color, transition: 'width 0.5s ease-out' }}></div>
@@ -169,40 +203,21 @@ const Goals = () => {
         </>
       )}
 
-      {/* 🔴 NEW: PROGRESS UPDATE MODAL */}
+      {/* PROGRESS MODAL */}
       {isModalOpen && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
-          background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
-          backdropFilter: 'blur(4px)'
-        }}>
-          <div style={{
-            background: cardBg, padding: '2rem', borderRadius: '16px', width: '90%', maxWidth: '400px',
-            border: `1px solid ${borderColor}`, boxShadow: '0 10px 25px rgba(0,0,0,0.5)'
-          }}>
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
+          <div style={{ background: cardBg, padding: '2rem', borderRadius: '16px', width: '90%', maxWidth: '400px', border: `1px solid ${borderColor}`, boxShadow: '0 10px 25px rgba(0,0,0,0.5)' }}>
             <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.2rem' }}>Update Progress</h3>
             <p style={{ color: mutedText, margin: '0 0 1.5rem 0' }}>{activeGoal?.title}</p>
             
             <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '2rem' }}>
-              <input 
-                type="range" 
-                min="0" max="100" 
-                value={sliderValue} 
-                onChange={(e) => setSliderValue(e.target.value)}
-                style={{ flex: 1, accentColor: activeGoal?.color }}
-              />
-              <span style={{ fontWeight: 'bold', fontSize: '1.2rem', color: activeGoal?.color, minWidth: '45px' }}>
-                {sliderValue}%
-              </span>
+              <input type="range" min="0" max="100" value={sliderValue} onChange={(e) => setSliderValue(e.target.value)} style={{ flex: 1, accentColor: activeGoal?.color }} />
+              <span style={{ fontWeight: 'bold', fontSize: '1.2rem', color: activeGoal?.color, minWidth: '45px' }}>{sliderValue}%</span>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-              <button onClick={() => setIsModalOpen(false)} style={{
-                padding: '10px 16px', borderRadius: '8px', border: 'none', background: 'transparent', color: mutedText, cursor: 'pointer', fontWeight: 'bold'
-              }}>Cancel</button>
-              <button onClick={saveProgressUpdate} style={{
-                padding: '10px 16px', borderRadius: '8px', border: 'none', background: activeGoal?.color, color: '#fff', cursor: 'pointer', fontWeight: 'bold'
-              }}>Save Changes</button>
+              <button onClick={() => setIsModalOpen(false)} style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', background: 'transparent', color: mutedText, cursor: 'pointer', fontWeight: 'bold' }}>Cancel</button>
+              <button onClick={saveProgressUpdate} style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', background: activeGoal?.color, color: '#fff', cursor: 'pointer', fontWeight: 'bold' }}>Save</button>
             </div>
           </div>
         </div>
