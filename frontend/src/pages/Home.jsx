@@ -7,15 +7,27 @@ const Home = () => {
   const { isDarkMode } = useTheme();
   const { user } = useAuth();
   
-  // Base API URL
-  const API_URL = import.meta.env.VITE_API_URL || '/api/v1';
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
 
   // -----------------------------------------
-  // CLOCK & WATER STATE (Unchanged)
+  // CLOCK & WATER STATE (Now with Memory!)
   // -----------------------------------------
   const [time, setTime] = useState(new Date());
-  const [waterGlasses, setWaterGlasses] = useState(0);
   const DAILY_GOAL = 8;
+  
+  // Get today's date string (e.g., "Wed Jun 10 2026")
+  const todayKey = new Date().toDateString();
+
+  // Load water from phone memory so it survives refresh
+  const [waterGlasses, setWaterGlasses] = useState(() => {
+    const savedWater = localStorage.getItem(`water_${todayKey}`);
+    return savedWater ? parseInt(savedWater) : 0;
+  });
+
+  // Save water to phone memory every time you click a glass
+  useEffect(() => {
+    localStorage.setItem(`water_${todayKey}`, waterGlasses.toString());
+  }, [waterGlasses, todayKey]);
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
@@ -35,7 +47,6 @@ const Home = () => {
   const [newTaskText, setNewTaskText] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
-  // 1. FETCH TASKS ON LOAD
   useEffect(() => {
     const fetchTasks = async () => {
       try {
@@ -43,7 +54,6 @@ const Home = () => {
         const response = await fetch(`${API_URL}/tasks`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
-        
         if (response.ok) {
           const data = await response.json();
           setTasks(data);
@@ -58,9 +68,10 @@ const Home = () => {
     if (user) fetchTasks();
   }, [API_URL, user]);
 
-  // 2. CREATE NEW TASK
+  // 🔴 FIXED: Changed from keypress to a proper form submission
   const handleAddTask = async (e) => {
-    if (e.key !== 'Enter' || !newTaskText.trim()) return;
+    e.preventDefault(); // Prevents page reload
+    if (!newTaskText.trim()) return;
 
     try {
       const token = localStorage.getItem('token');
@@ -75,15 +86,16 @@ const Home = () => {
 
       if (response.ok) {
         const addedTask = await response.json();
-        setTasks([addedTask, ...tasks]); // Add to top of list
-        setNewTaskText(''); // Clear input
+        setTasks([addedTask, ...tasks]);
+        setNewTaskText('');
+      } else {
+        alert("Failed to save task to database. Check Render connection.");
       }
     } catch (error) {
       console.error("Failed to add task:", error);
     }
   };
 
-  // 3. TOGGLE TASK COMPLETION
   const handleToggleTask = async (taskId) => {
     try {
       const token = localStorage.getItem('token');
@@ -91,7 +103,6 @@ const Home = () => {
         method: 'PUT',
         headers: { 'Authorization': `Bearer ${token}` }
       });
-
       if (response.ok) {
         const updatedTask = await response.json();
         setTasks(tasks.map(t => t._id === taskId ? updatedTask : t));
@@ -101,7 +112,6 @@ const Home = () => {
     }
   };
 
-  // 4. DELETE TASK
   const handleDeleteTask = async (taskId) => {
     try {
       const token = localStorage.getItem('token');
@@ -109,10 +119,7 @@ const Home = () => {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
-
-      if (response.ok) {
-        setTasks(tasks.filter(t => t._id !== taskId));
-      }
+      if (response.ok) setTasks(tasks.filter(t => t._id !== taskId));
     } catch (error) {
       console.error("Failed to delete task:", error);
     }
@@ -128,9 +135,7 @@ const Home = () => {
       
       {/* HEADER */}
       <div style={{ marginBottom: '2rem', textAlign: 'center' }}>
-        <h1 style={{ fontSize: '2rem', margin: '0 0 0.5rem 0', fontWeight: '800' }}>
-          {greeting}
-        </h1>
+        <h1 style={{ fontSize: '2rem', margin: '0 0 0.5rem 0', fontWeight: '800' }}>{greeting}</h1>
         <p style={{ fontSize: '1.1rem', color: isDarkMode ? '#94a3b8' : '#64748b', margin: 0, fontWeight: '500' }}>
           {time.toLocaleDateString('en-IN', { weekday: 'long', month: 'long', day: 'numeric' })} • {time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
         </p>
@@ -138,14 +143,12 @@ const Home = () => {
 
       {/* HYDRATION WIDGET */}
       <div style={{ 
-        background: cardBg, padding: '1.5rem', borderRadius: '16px', 
-        border: `1px solid ${borderColor}`, boxShadow: '0 4px 15px rgba(0,0,0,0.05)', marginBottom: '2rem'
+        background: cardBg, padding: '1.5rem', borderRadius: '16px', border: `1px solid ${borderColor}`, boxShadow: '0 4px 15px rgba(0,0,0,0.05)', marginBottom: '2rem'
       }}>
         <h3 style={{ margin: '0 0 1.2rem 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ fontSize: '1.2rem' }}>💧 Daily Hydration</span>
           <span style={{ fontSize: '1rem', fontWeight: 'bold', color: '#3b82f6' }}>{waterGlasses} / {DAILY_GOAL}</span>
         </h3>
-        
         <div className="water-grid" style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
           {[...Array(DAILY_GOAL)].map((_, index) => (
             <button
@@ -167,63 +170,47 @@ const Home = () => {
       </div>
 
       {/* TODAY'S TASKS UI */}
-      <div style={{ 
-        background: cardBg, padding: '1.5rem', borderRadius: '16px', border: `1px solid ${borderColor}`,
-      }}>
+      <div style={{ background: cardBg, padding: '1.5rem', borderRadius: '16px', border: `1px solid ${borderColor}` }}>
         <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.2rem' }}>✅ Today's Focus</h3>
         
-        <input 
-          type="text"
-          className="task-input"
-          placeholder="Add a new task... (Press Enter)"
-          value={newTaskText}
-          onChange={(e) => setNewTaskText(e.target.value)}
-          onKeyDown={handleAddTask}
-          style={{
-            background: isDarkMode ? '#0f172a' : '#f8fafc',
-            border: `1px solid ${borderColor}`,
-            color: textColor
-          }}
-        />
+        {/* 🔴 FIXED: Wrapped input in a form with a mobile-friendly submit button */}
+        <form onSubmit={handleAddTask} style={{ display: 'flex', gap: '8px', marginBottom: '1rem' }}>
+          <input 
+            type="text"
+            className="task-input"
+            placeholder="Add a new task..."
+            value={newTaskText}
+            onChange={(e) => setNewTaskText(e.target.value)}
+            style={{
+              background: isDarkMode ? '#0f172a' : '#f8fafc',
+              border: `1px solid ${borderColor}`,
+              color: textColor,
+              marginBottom: 0, // Removes old margin
+              flex: 1
+            }}
+          />
+          <button type="submit" style={{
+            padding: '0 20px', borderRadius: '8px', border: 'none',
+            background: '#3b82f6', color: '#fff', fontWeight: 'bold', cursor: 'pointer'
+          }}>
+            Add
+          </button>
+        </form>
 
         {isLoading ? (
           <p style={{ textAlign: 'center', color: isDarkMode ? '#94a3b8' : '#64748b' }}>Loading tasks...</p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             {tasks.length === 0 && <p style={{ fontStyle: 'italic', color: isDarkMode ? '#94a3b8' : '#64748b' }}>No tasks for today. Get some rest!</p>}
-            
             {tasks.map(task => (
-              <div 
-                key={task._id} 
-                className="task-item"
-                style={{
-                  background: isDarkMode ? '#334155' : '#f1f5f9',
-                  opacity: task.completed ? 0.6 : 1
-                }}
-              >
+              <div key={task._id} className="task-item" style={{ background: isDarkMode ? '#334155' : '#f1f5f9', opacity: task.completed ? 0.6 : 1 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }} onClick={() => handleToggleTask(task._id)}>
-                  <input 
-                    type="checkbox" 
-                    checked={task.completed}
-                    readOnly
-                    style={{ transform: 'scale(1.2)', cursor: 'pointer' }}
-                  />
-                  <span style={{ 
-                    textDecoration: task.completed ? 'line-through' : 'none',
-                    fontWeight: task.completed ? 'normal' : '500',
-                    cursor: 'pointer'
-                  }}>
+                  <input type="checkbox" checked={task.completed} readOnly style={{ transform: 'scale(1.2)', cursor: 'pointer' }} />
+                  <span style={{ textDecoration: task.completed ? 'line-through' : 'none', fontWeight: task.completed ? 'normal' : '500', cursor: 'pointer' }}>
                     {task.text}
                   </span>
                 </div>
-                <button 
-                  className="delete-btn" 
-                  title="Delete Task"
-                  onClick={(e) => {
-                    e.stopPropagation(); // Prevents checking the box when clicking delete
-                    handleDeleteTask(task._id);
-                  }}
-                >🗑️</button>
+                <button className="delete-btn" onClick={(e) => { e.stopPropagation(); handleDeleteTask(task._id); }}>🗑️</button>
               </div>
             ))}
           </div>
