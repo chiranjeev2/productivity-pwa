@@ -105,7 +105,6 @@ const Home = () => {
         console.error("Silent calendar sync failed:", error);
       }
     };
-
     // Trigger the sync every time water or tasks are updated!
     syncToCalendar();
   }, [waterGlasses, tasks, isLoading, API_URL]);
