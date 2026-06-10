@@ -1,81 +1,65 @@
-/* Styling for the Task Input Field */
-.task-input {
-  width: 100%;
-  padding: 12px 16px;
-  border-radius: 8px;
-  outline: none;
-  font-size: 1rem;
-  transition: border-color 0.3s ease;
-  margin-bottom: 1rem;
-  box-sizing: border-box;
+/* ==========================================================================
+   HYDRO WIDGET OPTIMIZATIONS (Fixes the vertical stack in image_c7e2b6.png)
+   ========================================================================== */
+
+.water-grid {
+  display: grid !important;
+  /* Default: 8 equal columns across the row for desktop view */
+  grid-template-columns: repeat(8, 1fr) !important; 
+  gap: 10px !important;
+  width: 100% !important;
+  height: auto !important;
+  background: transparent !important;
+  padding: 0 !important;
+  margin: 1rem 0 0 0 !important;
 }
 
-/* Base styling for each Task item */
+/* Force the buttons inside the grid to expand and keep their proportions */
+.water-grid button {
+  width: 100% !important;
+  aspect-ratio: 1 / 1 !important;
+  box-sizing: border-box !important;
+}
+
+/* Responsive breakpoint for mobile screens */
+@media (max-width: 550px) {
+  .water-grid {
+    /* Transitions seamlessly into 2 clean rows of 4 cubes on mobile devices */
+    grid-template-columns: repeat(4, 1fr) !important;
+    gap: 12px !important;
+  }
+}
+
+/* ==========================================================================
+   TASK ITEM & INTERACTION TARGETS
+   ========================================================================== */
+
 .task-item {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
-  border-radius: 8px;
-  margin-bottom: 8px;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-radius: 12px;
+  margin-bottom: 0.75rem;
   transition: all 0.2s ease;
+}
+
+.task-item input[type="checkbox"] {
+  min-width: 22px;
+  min-height: 22px;
   cursor: pointer;
 }
 
-/* Subtle hover lift effect */
-.task-item:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-}
-
-/* Hide the delete button by default */
 .delete-btn {
-  opacity: 0;
-  background: none;
+  background: transparent;
   border: none;
-  font-size: 1.2rem;
   cursor: pointer;
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-
-/* Reveal the delete button ONLY when hovering over the task row */
-.task-item:hover .delete-btn {
-  opacity: 1;
+  font-size: 1.2rem;
+  padding: 4px;
+  opacity: 0.6;
+  transition: opacity 0.2s;
 }
 
 .delete-btn:hover {
-  transform: scale(1.2);
-}
-
-/* 📱 MOBILE SQUISH FIX FOR WATER CUBS */
-@media (max-width: 480px) {
-  /* Clean up and optimize the hydration grid */
-.water-grid {
-  display: grid !important;
-  grid-template-columns: repeat(4, 1fr) !important; /* 4 items per row on mobile */
-  gap: 10px !important;
-  height: auto !important; /* Destroys that giant blank box seen in image_d1d31b.png */
-  background: transparent !important;
-  padding: 0 !important;
-}
-
-/* Move back to a single row of 8 only on larger desktop screens */
-@media (min-width: 500px) {
-  .water-grid {
-    grid-template-columns: repeat(8, 1fr) !important;
-  }
-}
-
-/* General touch targets for mobile checkboxes */
-.task-item input[type="checkbox"] {
-  min-width: 20px;
-  min-height: 20px;
-  cursor: pointer;
-}
-  
-  .water-cube-btn {
-    flex: none !important;
-    width: calc(25% - 10px) !important; /* Perfect 4x2 layout on phones */
-    height: 50px !important;
-  }
+  opacity: 1;
 }
