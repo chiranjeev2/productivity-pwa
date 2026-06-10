@@ -5,6 +5,7 @@ const connectDB = require('./src/config/db');
 const authRoutes = require('./src/routes/authRoutes');
 const taskRoutes = require('./src/routes/taskRoutes');
 const goalRoutes = require('./routes/goalRoutes');
+const taskRoutes = require('./routes/taskRoutes');
 
 // Import the HTTP and Socket.io modules
 const http = require('http');
@@ -20,6 +21,7 @@ connectDB();
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/tasks', taskRoutes);
 app.use('/api/v1/goals', goalRoutes);
+app.use('/api/v1/tasks', taskRoutes);
 
 // NEW: Upgrade the Express app to a WebSocket-enabled server
 const server = http.createServer(app);
