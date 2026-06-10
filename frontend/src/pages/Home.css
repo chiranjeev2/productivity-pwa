@@ -49,11 +49,29 @@
 
 /* 📱 MOBILE SQUISH FIX FOR WATER CUBS */
 @media (max-width: 480px) {
+  /* Clean up and optimize the hydration grid */
+.water-grid {
+  display: grid !important;
+  grid-template-columns: repeat(4, 1fr) !important; /* 4 items per row on mobile */
+  gap: 10px !important;
+  height: auto !important; /* Destroys that giant blank box seen in image_d1d31b.png */
+  background: transparent !important;
+  padding: 0 !important;
+}
+
+/* Move back to a single row of 8 only on larger desktop screens */
+@media (min-width: 500px) {
   .water-grid {
-    flex-wrap: wrap; /* Allows icons to drop to a second line */
-    justify-content: center !important;
-    gap: 12px !important; /* Spreading them out cleanly */
+    grid-template-columns: repeat(8, 1fr) !important;
   }
+}
+
+/* General touch targets for mobile checkboxes */
+.task-item input[type="checkbox"] {
+  min-width: 20px;
+  min-height: 20px;
+  cursor: pointer;
+}
   
   .water-cube-btn {
     flex: none !important;

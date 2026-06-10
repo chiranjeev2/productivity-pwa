@@ -106,7 +106,6 @@ const Home = () => {
     const tempId = Date.now().toString();
     const temporaryTask = { _id: tempId, text: newTaskText, completed: false };
     
-    // Step 1: Instantly add to UI
     setTasks([temporaryTask, ...tasks]);
     const textToSubmit = newTaskText;
     setNewTaskText('');
@@ -124,17 +123,15 @@ const Home = () => {
 
       if (response.ok) {
         const serverTask = await response.json();
-        // Swap temp ID out for the real database ID smoothly
         setTasks(prev => prev.map(t => t._id === tempId ? serverTask : t));
       }
     } catch (error) {
       console.error("Failed to save task:", error);
-      setTasks(prev => prev.filter(t => t._id !== tempId)); // Rollback on error
+      setTasks(prev => prev.filter(t => t._id !== tempId));
     }
   };
 
   const handleToggleTask = async (taskId) => {
-    // Optimistic toggle
     setTasks(tasks.map(t => t._id === taskId ? { ...t, completed: !t.completed } : t));
 
     try {
@@ -145,14 +142,12 @@ const Home = () => {
       });
       if (!response.ok) throw new Error();
     } catch (error) {
-      // Rollback on error
       setTasks(tasks.map(t => t._id === taskId ? { ...t, completed: !t.completed } : t));
     }
   };
 
   const handleDeleteTask = async (taskId) => {
     const backupTasks = [...tasks];
-    // Optimistic delete
     setTasks(tasks.filter(t => t._id !== taskId));
 
     try {
@@ -163,7 +158,7 @@ const Home = () => {
       });
       if (!response.ok) throw new Error();
     } catch (error) {
-      setTasks(backupTasks); // Rollback on error
+      setTasks(backupTasks);
     }
   };
 
@@ -178,7 +173,10 @@ const Home = () => {
   const borderColor = isDarkMode ? '#334155' : '#e2e8f0';
 
   return (
-    <div style={{ color: textColor, maxWidth: '600px', margin: '0 auto' }}>
+    /* 🔴 FIXED: Added paddingBottom: '100px' to allow scrolling room past the fixed mobile navigation bar */
+    <div style={{ color: textColor, maxWidth: '600px', margin: '0 auto', paddingBottom: '100px' }}>
+      
+      {/* HEADER */}
       <div style={{ marginBottom: '2rem', textAlign: 'center' }}>
         <h1 style={{ fontSize: '2rem', margin: '0 0 0.5rem 0', fontWeight: '800' }}>{greeting}</h1>
         <p style={{ fontSize: '1.1rem', color: isDarkMode ? '#94a3b8' : '#64748b', margin: 0, fontWeight: '500' }}>
@@ -186,18 +184,21 @@ const Home = () => {
         </p>
       </div>
 
+      {/* HYDRATION WIDGET */}
       <div style={{ background: cardBg, padding: '1.5rem', borderRadius: '16px', border: `1px solid ${borderColor}`, marginBottom: '2rem' }}>
         <h3 style={{ margin: '0 0 1.2rem 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ fontSize: '1.2rem' }}>💧 Daily Hydration</span>
           <span style={{ fontSize: '1rem', fontWeight: 'bold', color: '#3b82f6' }}>{waterGlasses} / {DAILY_GOAL}</span>
         </h3>
-        <div className="water-grid" style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+        
+        {/* 🔴 FIXED: Stripped inline flex declarations so it relies cleanly on the responsive grid styles from Home.css */}
+        <div className="water-grid">
           {[...Array(DAILY_GOAL)].map((_, index) => (
             <button
               key={index}
               onClick={() => setWaterGlasses(index + 1)}
               style={{
-                flex: 1, aspectRatio: '1', borderRadius: '8px', border: 'none',
+                aspectRatio: '1', borderRadius: '8px', border: 'none',
                 background: index < waterGlasses ? '#3b82f6' : (isDarkMode ? '#334155' : '#f1f5f9'),
                 cursor: 'pointer', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                 transform: index < waterGlasses ? 'scale(1.05)' : 'scale(1)',
@@ -210,6 +211,7 @@ const Home = () => {
         </div>
       </div>
 
+      {/* TODAY'S TASKS UI */}
       <div style={{ background: cardBg, padding: '1.5rem', borderRadius: '16px', border: `1px solid ${borderColor}` }}>
         <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.2rem' }}>✅ Today's Focus</h3>
         
