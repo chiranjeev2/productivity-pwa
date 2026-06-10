@@ -1,36 +1,31 @@
 import React, { useState, useEffect } from 'react';
 import { useTheme } from '../context/ThemeContext';
-import './Home.css'; // Connects the new hover effects!
+import './Home.css';
 
 const Home = () => {
   const { isDarkMode } = useTheme();
   
-  // State for the Clock and Water Tracker
   const [time, setTime] = useState(new Date());
   const [waterGlasses, setWaterGlasses] = useState(0);
   const DAILY_GOAL = 8;
 
-  // State for Tasks (Temporary UI state)
   const [tasks, setTasks] = useState([
     { id: 1, text: 'Review DSA Graphs & Trees', completed: false },
     { id: 2, text: 'Complete Sigma MERN module', completed: true }
   ]);
   const [newTaskText, setNewTaskText] = useState('');
 
-  // 1. Live Clock Effect
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  // 2. Dynamic Greeting Logic
   const hour = time.getHours();
   let greeting = 'Good Night 🌙';
   if (hour >= 5 && hour < 12) greeting = 'Good Morning ☀️';
   else if (hour >= 12 && hour < 17) greeting = 'Good Afternoon 🌤️';
   else if (hour >= 17 && hour < 21) greeting = 'Good Evening 🌇';
 
-  // 3. Theme Colors
   const textColor = isDarkMode ? '#f8fafc' : '#0f172a';
   const cardBg = isDarkMode ? '#1e293b' : '#ffffff';
   const borderColor = isDarkMode ? '#334155' : '#e2e8f0';
@@ -38,7 +33,7 @@ const Home = () => {
   return (
     <div style={{ color: textColor, maxWidth: '600px', margin: '0 auto' }}>
       
-      {/* 🔴 DYNAMIC HEADER */}
+      {/* DYNAMIC HEADER */}
       <div style={{ marginBottom: '2rem', textAlign: 'center' }}>
         <h1 style={{ fontSize: '2rem', margin: '0 0 0.5rem 0', fontWeight: '800' }}>
           {greeting}
@@ -48,7 +43,7 @@ const Home = () => {
         </p>
       </div>
 
-      {/* 🔴 HYDRATION WIDGET */}
+      {/* HYDRATION WIDGET */}
       <div style={{ 
         background: cardBg, 
         padding: '1.5rem', 
@@ -64,11 +59,13 @@ const Home = () => {
           </span>
         </h3>
         
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+        {/* Added className="water-grid" here */}
+        <div className="water-grid" style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
           {[...Array(DAILY_GOAL)].map((_, index) => (
             <button
               key={index}
               onClick={() => setWaterGlasses(index + 1)}
+              className="water-cube-btn" // Added class here
               style={{
                 flex: 1,
                 aspectRatio: '1',
@@ -93,7 +90,7 @@ const Home = () => {
         </p>
       </div>
 
-      {/* 🔴 TODAY'S TASKS UI */}
+      {/* TODAY'S TASKS UI */}
       <div style={{ 
         background: cardBg, 
         padding: '1.5rem', 
@@ -102,7 +99,6 @@ const Home = () => {
       }}>
         <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.2rem' }}>✅ Today's Focus</h3>
         
-        {/* Input Field */}
         <input 
           type="text"
           className="task-input"
@@ -116,7 +112,6 @@ const Home = () => {
           }}
         />
 
-        {/* Task List */}
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           {tasks.map(task => (
             <div 
@@ -145,9 +140,7 @@ const Home = () => {
             </div>
           ))}
         </div>
-
       </div>
-
     </div>
   );
 };

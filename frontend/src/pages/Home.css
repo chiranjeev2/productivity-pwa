@@ -22,7 +22,7 @@
   cursor: pointer;
 }
 
-/* The subtle hover lift effect */
+/* Subtle hover lift effect */
 .task-item:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
@@ -45,4 +45,19 @@
 
 .delete-btn:hover {
   transform: scale(1.2);
+}
+
+/* 📱 MOBILE SQUISH FIX FOR WATER CUBS */
+@media (max-width: 480px) {
+  .water-grid {
+    flex-wrap: wrap; /* Allows icons to drop to a second line */
+    justify-content: center !important;
+    gap: 12px !important; /* Spreading them out cleanly */
+  }
+  
+  .water-cube-btn {
+    flex: none !important;
+    width: calc(25% - 10px) !important; /* Perfect 4x2 layout on phones */
+    height: 50px !important;
+  }
 }
