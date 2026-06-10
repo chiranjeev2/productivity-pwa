@@ -9,17 +9,18 @@ const Calendar = () => {
 
   const [logs, setLogs] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  
+  // 🔴 NEW: State to track which month we are currently viewing
+  const [currentDate, setCurrentDate] = useState(new Date());
 
-  // Calendar setup for the current month
   const today = new Date();
-  const currentYear = today.getFullYear();
-  const currentMonth = today.getMonth(); // 0-indexed (0 = Jan, 11 = Dec)
+  const currentYear = currentDate.getFullYear();
+  const currentMonth = currentDate.getMonth(); 
   
   const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   
-  // Figure out how many days are in this month, and what day of the week the 1st is
   const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-  const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay(); // 0 = Sunday, 1 = Monday...
+  const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay(); 
 
   useEffect(() => {
     const fetchCalendarLogs = async () => {
@@ -41,23 +42,28 @@ const Calendar = () => {
     if (user) fetchCalendarLogs();
   }, [API_URL, user]);
 
-  // Helper function to find a log for a specific day
+  // 🔴 NEW: Navigation Functions
+  const handlePrevMonth = () => {
+    setCurrentDate(new Date(currentYear, currentMonth - 1, 1));
+  };
+
+  const handleNextMonth = () => {
+    setCurrentDate(new Date(currentYear, currentMonth + 1, 1));
+  };
+
   const getLogForDay = (day) => {
-    // Format the day as YYYY-MM-DD to match the database string
     const formattedMonth = String(currentMonth + 1).padStart(2, '0');
     const formattedDay = String(day).padStart(2, '0');
     const dateString = `${currentYear}-${formattedMonth}-${formattedDay}`;
-    
     return logs.find(log => log.dateString === dateString);
   };
 
-  // Determine the color of the square based on the database status
   const getSquareColor = (status) => {
     switch (status) {
-      case 'perfect': return '#10b981'; // Green
-      case 'good': return '#3b82f6';    // Blue
-      case 'missed': return '#ef4444';  // Red
-      default: return isDarkMode ? '#334155' : '#e2e8f0'; // Empty/Gray
+      case 'perfect': return '#10b981'; 
+      case 'good': return '#3b82f6';    
+      case 'missed': return '#ef4444';  
+      default: return isDarkMode ? '#334155' : '#e2e8f0'; 
     }
   };
 
@@ -68,36 +74,47 @@ const Calendar = () => {
   return (
     <div style={{ color: textColor, maxWidth: '600px', margin: '0 auto' }}>
       
+      {/* 🔴 UPGRADED: Meaningful Title */}
       <div style={{ marginBottom: '2rem', textAlign: 'center' }}>
-        <h1 style={{ fontSize: '2rem', margin: '0 0 0.5rem 0', fontWeight: '800' }}>📅 Calendar</h1>
+        <h1 style={{ fontSize: '2rem', margin: '0 0 0.5rem 0', fontWeight: '800' }}>📊 Consistency Tracker</h1>
         <p style={{ fontSize: '1.1rem', color: mutedText, margin: 0, fontWeight: '500' }}>
-          {monthNames[currentMonth]} {currentYear}
+          Build the chain, day by day.
         </p>
       </div>
 
       <div style={{ background: cardBg, padding: '1.5rem', borderRadius: '16px', border: `1px solid ${isDarkMode ? '#334155' : '#e2e8f0'}` }}>
         
-        {/* Days of the week header */}
+        {/* 🔴 NEW: Month Navigation Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+          <button onClick={handlePrevMonth} style={{ background: 'transparent', border: 'none', color: textColor, fontSize: '1.5rem', cursor: 'pointer', padding: '0 10px' }}>
+            &#8592;
+          </button>
+          <h2 style={{ margin: 0, fontSize: '1.3rem' }}>
+            {monthNames[currentMonth]} {currentYear}
+          </h2>
+          <button onClick={handleNextMonth} style={{ background: 'transparent', border: 'none', color: textColor, fontSize: '1.5rem', cursor: 'pointer', padding: '0 10px' }}>
+            &#8594;
+          </button>
+        </div>
+
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px', marginBottom: '1rem', textAlign: 'center', fontWeight: 'bold', color: mutedText }}>
           <div>Su</div><div>Mo</div><div>Tu</div><div>We</div><div>Th</div><div>Fr</div><div>Sa</div>
         </div>
 
-        {/* The actual calendar grid */}
         {isLoading ? (
           <p style={{ textAlign: 'center', color: mutedText, padding: '2rem 0' }}>Loading your history...</p>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px' }}>
             
-            {/* Render empty squares for days before the 1st of the month */}
             {[...Array(firstDayOfMonth)].map((_, i) => (
               <div key={`empty-${i}`} style={{ aspectRatio: '1', borderRadius: '8px', background: 'transparent' }}></div>
             ))}
 
-            {/* Render the actual days of the month */}
             {[...Array(daysInMonth)].map((_, i) => {
               const day = i + 1;
               const log = getLogForDay(day);
-              const isToday = day === today.getDate();
+              // Check if the square being rendered is exactly today's date in real life
+              const isToday = day === today.getDate() && currentMonth === today.getMonth() && currentYear === today.getFullYear();
               
               return (
                 <div 
@@ -112,7 +129,7 @@ const Calendar = () => {
                     fontWeight: 'bold',
                     color: log?.status && log.status !== 'empty' ? '#fff' : mutedText,
                     border: isToday ? `2px solid ${isDarkMode ? '#f8fafc' : '#0f172a'}` : 'none',
-                    opacity: day > today.getDate() ? 0.3 : 1 // Fade out future days
+                    // 🔴 FIXED: Opacity restriction removed completely. All days render at 100% opacity.
                   }}
                   title={log ? `Water: ${log.waterIntake} | Tasks: ${log.tasksCompleted}` : 'No data'}
                 >
@@ -124,7 +141,6 @@ const Calendar = () => {
         )}
       </div>
 
-      {/* Legend */}
       <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', marginTop: '2rem', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: '16px', height: '16px', borderRadius: '4px', background: '#10b981' }}></div><span style={{ fontSize: '0.9rem', color: mutedText }}>Perfect</span></div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: '16px', height: '16px', borderRadius: '4px', background: '#3b82f6' }}></div><span style={{ fontSize: '0.9rem', color: mutedText }}>Good</span></div>
