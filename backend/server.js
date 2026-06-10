@@ -1,10 +1,10 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const connectDB = require('./src/config/db');
-const authRoutes = require('./src/routes/authRoutes');
-const goalRoutes = require('./routes/goalRoutes');
-const taskRoutes = require('./routes/taskRoutes');
+const connectDB = require('./src/config/db'); // Check if your db is in src/config/
+const authRoutes = require('./src/routes/authRoutes'); // Check if auth is in src/routes/
+const goalRoutes = require('./src/routes/goalRoutes');
+const taskRoutes = require('./src/routes/taskRoutes');
 
 // Import the HTTP and Socket.io modules
 const http = require('http');
@@ -17,12 +17,12 @@ app.use(express.json());
 
 connectDB();
 
+// 🔴 FIXED: Removed the duplicate taskRoutes initialization
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/tasks', taskRoutes);
 app.use('/api/v1/goals', goalRoutes);
-app.use('/api/v1/tasks', taskRoutes);
 
-// NEW: Upgrade the Express app to a WebSocket-enabled server
+// Upgrade the Express app to a WebSocket-enabled server
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
@@ -31,10 +31,10 @@ const io = new Server(server, {
   }
 });
 
-// NEW: Make 'io' globally accessible so our routes can broadcast messages
+// Make 'io' globally accessible so our routes can broadcast messages
 app.set('io', io);
 
-// NEW: Listen for WebSocket connections
+// Listen for WebSocket connections
 io.on('connection', (socket) => {
   console.log(`⚡ WebSocket Connected: ${socket.id}`);
 
