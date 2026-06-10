@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 
@@ -9,40 +9,61 @@ const Calendar = () => {
 
   const [logs, setLogs] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-
-  // 🔴 NEW: State to track which month we are currently viewing
   const [currentDate, setCurrentDate] = useState(new Date());
 
   const today = new Date();
   const currentYear = currentDate.getFullYear();
-  const currentMonth = currentDate.getMonth();
-
+  const currentMonth = currentDate.getMonth(); 
+  
   const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-
+  
   const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-  const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay();
+  const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay(); 
 
-  useEffect(() => {
-    const fetchCalendarLogs = async () => {
-      try {
-        const token = localStorage.getItem('token');
-        const response = await fetch(`${API_URL}/calendar`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (response.ok) {
-          const data = await response.json();
-          setLogs(data);
-        }
-      } catch (error) {
-        console.error("Failed to fetch calendar data:", error);
-      } finally {
-        setIsLoading(false);
+  // Memoized fetch function so it can be safely used across intervals and focus listeners
+  const fetchCalendarLogs = useCallback(async (showLoading = false) => {
+    if (!user) return;
+    if (showLoading) setIsLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/calendar`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setLogs(data);
       }
-    };
-    if (user) fetchCalendarLogs();
+    } catch (error) {
+      console.error("Failed to fetch calendar data:", error);
+    } finally {
+      setIsLoading(false);
+    }
   }, [API_URL, user]);
 
-  // 🔴 NEW: Navigation Functions
+  // 🔴 LIVE SYNC ENGINE: Controls Background Polling & Focus Re-validation
+  useEffect(() => {
+    if (!user) return;
+
+    // Initial load
+    fetchCalendarLogs(true);
+
+    // 1. Smart Polling: Fetch background changes every 5 seconds
+    const interval = setInterval(() => {
+      fetchCalendarLogs(false); // false means don't show flickering loading screens
+    }, 5000);
+
+    // 2. Focus Triggers: Sync instantly when user unlocks phone or switches tabs
+    const handleFocus = () => fetchCalendarLogs(false);
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('visibilitychange', handleFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('visibilitychange', handleFocus);
+    };
+  }, [user, fetchCalendarLogs]);
+
   const handlePrevMonth = () => {
     setCurrentDate(new Date(currentYear, currentMonth - 1, 1));
   };
@@ -60,10 +81,10 @@ const Calendar = () => {
 
   const getSquareColor = (status) => {
     switch (status) {
-      case 'perfect': return '#10b981';
-      case 'good': return '#3b82f6';
-      case 'missed': return '#ef4444';
-      default: return isDarkMode ? '#334155' : '#e2e8f0';
+      case 'perfect': return '#10b981'; 
+      case 'good': return '#3b82f6';    
+      case 'missed': return '#ef4444';  
+      default: return isDarkMode ? '#334155' : '#e2e8f0'; 
     }
   };
 
@@ -72,9 +93,8 @@ const Calendar = () => {
   const cardBg = isDarkMode ? '#1e293b' : '#ffffff';
 
   return (
-    <div style={{ color: textColor, maxWidth: '600px', margin: '0 auto' }}>
-
-      {/* 🔴 UPGRADED: Meaningful Title */}
+    <div style={{ color: textColor, maxWidth: '600px', margin: '0 auto', paddingBottom: '100px' }}>
+      
       <div style={{ marginBottom: '2rem', textAlign: 'center' }}>
         <h1 style={{ fontSize: '2rem', margin: '0 0 0.5rem 0', fontWeight: '800' }}>📊 Consistency Tracker</h1>
         <p style={{ fontSize: '1.1rem', color: mutedText, margin: 0, fontWeight: '500' }}>
@@ -83,8 +103,7 @@ const Calendar = () => {
       </div>
 
       <div style={{ background: cardBg, padding: '1.5rem', borderRadius: '16px', border: `1px solid ${isDarkMode ? '#334155' : '#e2e8f0'}` }}>
-
-        {/* 🔴 NEW: Month Navigation Header */}
+        
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
           <button onClick={handlePrevMonth} style={{ background: 'transparent', border: 'none', color: textColor, fontSize: '1.5rem', cursor: 'pointer', padding: '0 10px' }}>
             &#8592;
@@ -105,7 +124,7 @@ const Calendar = () => {
           <p style={{ textAlign: 'center', color: mutedText, padding: '2rem 0' }}>Loading your history...</p>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px' }}>
-
+            
             {[...Array(firstDayOfMonth)].map((_, i) => (
               <div key={`empty-${i}`} style={{ aspectRatio: '1', borderRadius: '8px', background: 'transparent' }}></div>
             ))}
@@ -113,25 +132,22 @@ const Calendar = () => {
             {[...Array(daysInMonth)].map((_, i) => {
               const day = i + 1;
               const log = getLogForDay(day);
-              // Check if the square being rendered is exactly today's date in real life
               const isToday = day === today.getDate() && currentMonth === today.getMonth() && currentYear === today.getFullYear();
-
+              
               return (
-                <div
-                  key={day}
-                  style={{
-                    aspectRatio: '1',
-                    borderRadius: '8px',
+                <div 
+                  key={day} 
+                  style={{ 
+                    aspectRatio: '1', 
+                    borderRadius: '8px', 
                     background: getSquareColor(log?.status),
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     fontWeight: 'bold',
                     color: log?.status && log.status !== 'empty' ? '#fff' : mutedText,
-                    // Find this section inside your mapped days array:
-                    border: isToday ? '2px solid #3b82f6' : 'none', // Forces an explicit blue border
-                    boxShadow: isToday ? '0 0 10px rgba(59, 130, 246, 0.5)' : 'none', // Adds a glow so it is highly visible on mobile
-                    // 🔴 FIXED: Opacity restriction removed completely. All days render at 100% opacity.
+                    border: isToday ? '2px solid #3b82f6' : 'none',
+                    boxShadow: isToday ? '0 0 10px rgba(59, 130, 246, 0.4)' : 'none'
                   }}
                   title={log ? `Water: ${log.waterIntake} | Tasks: ${log.tasksCompleted}` : 'No data'}
                 >

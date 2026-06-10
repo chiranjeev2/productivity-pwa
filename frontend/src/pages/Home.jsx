@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import './Home.css';
@@ -22,45 +22,67 @@ const Home = () => {
   const [newTaskText, setNewTaskText] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load initial data from DB
-  useEffect(() => {
-    const fetchInitialData = async () => {
-      try {
-        const token = localStorage.getItem('token');
-        if (!token) return;
+  // Memoized fetch operation to safely share with polling utilities
+  const fetchDashboardData = useCallback(async (showLoading = false) => {
+    if (!user) return;
+    if (showLoading) setIsLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
 
-        // 1. Fetch tasks
-        const taskRes = await fetch(`${API_URL}/tasks`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        let fetchedTasks = [];
-        if (taskRes.ok) {
-          fetchedTasks = await taskRes.json();
-          setTasks(fetchedTasks);
-        }
-
-        // 2. Fetch today's log for cross-device hydration
-        const calRes = await fetch(`${API_URL}/calendar`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (calRes.ok) {
-          const logs = await calRes.json();
-          const todayLog = logs.find(log => log.dateString === todayDateString);
-          if (todayLog) {
-            setWaterGlasses(todayLog.waterIntake);
-          }
-        }
-      } catch (error) {
-        console.error("Error loading initial data:", error);
-      } finally {
-        setIsLoading(false);
+      // 1. Fetch tasks
+      const taskRes = await fetch(`${API_URL}/tasks`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (taskRes.ok) {
+        const fetchedTasks = await taskRes.json();
+        setTasks(fetchedTasks);
       }
-    };
 
-    if (user) fetchInitialData();
+      // 2. Fetch hydration data via current calendar logs
+      const calRes = await fetch(`${API_URL}/calendar`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (calRes.ok) {
+        const logs = await calRes.json();
+        const todayLog = logs.find(log => log.dateString === todayDateString);
+        if (todayLog) {
+          setWaterGlasses(todayLog.waterIntake);
+        } else {
+          setWaterGlasses(0); // Standard fallback if empty
+        }
+      }
+    } catch (error) {
+      console.error("Error syncing dashboard data:", error);
+    } finally {
+      setIsLoading(false);
+    }
   }, [API_URL, user, todayDateString]);
 
-  // Background calendar syncing logic
+  // 🔴 LIVE SYNC ENGINE: Background Polling + Focus Window Refreshing
+  useEffect(() => {
+    if (!user) return;
+
+    fetchDashboardData(true);
+
+    // Poll DB every 5 seconds for background multi-device changes
+    const interval = setInterval(() => {
+      fetchDashboardData(false);
+    }, 5000);
+
+    // Force pull data when user switches tabs or wakes device screen up
+    const handleFocus = () => fetchDashboardData(false);
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('visibilitychange', handleFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('visibilitychange', handleFocus);
+    };
+  }, [user, fetchDashboardData]);
+
+  // Background database updating module
   useEffect(() => {
     if (isLoading) return;
 
@@ -86,7 +108,7 @@ const Home = () => {
           })
         });
       } catch (error) {
-        console.error("Calendar sync failed:", error);
+        console.error("Calendar database sync failed:", error);
       }
     };
 
@@ -98,7 +120,7 @@ const Home = () => {
     return () => clearInterval(timer);
   }, []);
 
-  // OPTIMISTIC TASK MANAGEMENT
+  // OPTIMISTIC HANDLERS
   const handleAddTask = async (e) => {
     e.preventDefault();
     if (!newTaskText.trim()) return;
@@ -213,7 +235,6 @@ const Home = () => {
       <div style={{ background: cardBg, padding: '1.5rem', borderRadius: '16px', border: `1px solid ${borderColor}` }}>
         <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.2rem' }}>✅ Today's Focus</h3>
         
-        {/* FORM WIRED TO CSS CLASSES */}
         <form onSubmit={handleAddTask} className="task-form">
           <input 
             type="text"
@@ -221,11 +242,7 @@ const Home = () => {
             placeholder="Add a new task..."
             value={newTaskText}
             onChange={(e) => setNewTaskText(e.target.value)}
-            style={{ 
-              background: isDarkMode ? '#0f172a' : '#f8fafc', 
-              border: `1px solid ${borderColor}`, 
-              color: textColor 
-            }}
+            style={{ background: isDarkMode ? '#0f172a' : '#f8fafc', border: `1px solid ${borderColor}`, color: textColor }}
           />
           <button type="submit" className="task-submit-btn">
             Add

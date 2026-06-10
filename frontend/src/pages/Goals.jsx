@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import './Goals.css';
@@ -17,27 +17,51 @@ const Goals = () => {
   const [activeGoal, setActiveGoal] = useState(null);
   const [sliderValue, setSliderValue] = useState(0);
 
-  useEffect(() => {
-    const fetchGoals = async () => {
-      try {
-        const token = localStorage.getItem('token');
-        const response = await fetch(`${API_URL}/goals`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (response.ok) {
-          const data = await response.json();
-          setGoals(data);
-        }
-      } catch (error) {
-        console.error("Failed to fetch goals:", error);
-      } finally {
-        setIsLoading(false);
+  // Memoized fetch function for safety inside sync engines
+  const fetchGoals = useCallback(async (showLoading = false) => {
+    if (!user) return;
+    if (showLoading) setIsLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/goals`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setGoals(data);
       }
-    };
-    if (user) fetchGoals();
+    } catch (error) {
+      console.error("Failed to fetch goals:", error);
+    } finally {
+      setIsLoading(false);
+    }
   }, [API_URL, user]);
 
-  // Optimistic Goal Creation
+  // 🔴 LIVE SYNC ENGINE: Background Polling + Focus Window Refreshing
+  useEffect(() => {
+    if (!user) return;
+
+    // Initial loading state call
+    fetchGoals(true);
+
+    // Poll DB every 5 seconds for background cross-device modifications
+    const interval = setInterval(() => {
+      fetchGoals(false);
+    }, 5000);
+
+    // Pull instantly when device wakes up or tab is brought to focus
+    const handleFocus = () => fetchGoals(false);
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('visibilitychange', handleFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('visibilitychange', handleFocus);
+    };
+  }, [user, fetchGoals]);
+
+  // OPTIMISTIC HANDLERS (Instant UI Execution)
   const handleAddGoal = async (e) => {
     e.preventDefault();
     if (!newTitle.trim()) return;
@@ -79,7 +103,6 @@ const Goals = () => {
     }
   };
 
-  // Optimistic Goal Deletion
   const handleDeleteGoal = async (goalId, e) => {
     e.stopPropagation();
     if (!window.confirm("Are you sure you want to delete this goal?")) return;
@@ -110,7 +133,6 @@ const Goals = () => {
   const saveProgressUpdate = async () => {
     if (!activeGoal) return;
     
-    // Optimistic progress state update
     const previousGoals = [...goals];
     setGoals(goals.map(g => g._id === activeGoal._id ? { ...g, progress: sliderValue } : g));
     setIsModalOpen(false);
@@ -147,7 +169,8 @@ const Goals = () => {
   const trackBg = isDarkMode ? '#334155' : '#e2e8f0';
 
   return (
-    <div style={{ color: textColor, maxWidth: '600px', margin: '0 auto', position: 'relative' }}>
+    <div style={{ color: textColor, maxWidth: '600px', margin: '0 auto', paddingBottom: '100px', position: 'relative' }}>
+      
       <div style={{ marginBottom: '2rem', textAlign: 'center' }}>
         <h1 style={{ fontSize: '2rem', margin: '0 0 0.5rem 0', fontWeight: '800' }}>🎯 Vision Board</h1>
         <p style={{ fontSize: '1.1rem', color: mutedText, margin: 0, fontWeight: '500' }}>Track your strategic milestones.</p>
