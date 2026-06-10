@@ -1,13 +1,13 @@
 const mongoose = require('mongoose');
 
 const dailyLogSchema = new mongoose.Schema({
-  user: {
+  userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
   },
   dateString: {
-    type: String, // Stored as "YYYY-MM-DD" for easy calendar matching
+    type: String, // Stored as "YYYY-MM-DD" so the calendar can easily match it
     required: true
   },
   waterIntake: {
@@ -18,10 +18,6 @@ const dailyLogSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
-  totalTasks: {
-    type: Number,
-    default: 0
-  },
   status: {
     type: String,
     enum: ['perfect', 'good', 'missed', 'empty'],
@@ -29,7 +25,7 @@ const dailyLogSchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
-// Ensure a user can only have one log per specific date
-dailyLogSchema.index({ user: 1, dateString: 1 }, { unique: true });
+// This ensures a user can only have ONE log per specific calendar day
+dailyLogSchema.index({ userId: 1, dateString: 1 }, { unique: true });
 
 module.exports = mongoose.model('DailyLog', dailyLogSchema);
