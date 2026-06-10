@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Goal = require('../models/Goal');
-const protect = require('../middleware/authMiddleware'); // Assuming you have an auth middleware
+const { protect } = require('../middleware/authMiddleware'); // Assuming you have an auth middleware
 
 // @route   GET /api/v1/goals
 // @desc    Get all goals for the logged-in user

@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Task = require('../models/Task');
-const protect = require('../middleware/authMiddleware'); // Your auth middleware
+const { protect } = require('../middleware/authMiddleware'); // Your auth middleware
 
 // Get all tasks for today
 router.get('/', protect, async (req, res) => {
