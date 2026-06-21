@@ -5,15 +5,15 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
+import { SyncProvider, useSync } from './context/SyncContext';
 
-// Pages (Restored)
+// Pages
 import Home from './pages/Home';
 import Goals from './pages/Goals';
 import Calendar from './pages/Calendar';
 import { Login } from './pages/Login';
 
-// Components (Restored)
-import { ConnectionStatus } from './components/ui/ConnectionStatus';
+// Layout Components
 import BottomNav from './components/layout/BottomNav';
 
 // Protects routes from unauthenticated users
@@ -23,7 +23,42 @@ const ProtectedRoute = ({ children }) => {
   return children;
 };
 
-// Extracted layout to use hooks inside the Router
+// 🔴 NEW: Live Connectivity Status Badge (Handles Live, Reconnecting, and Offline states)
+const HeaderBadge = () => {
+  const { networkStatus } = useSync();
+
+  const getBadgeStyle = () => {
+    switch (networkStatus) {
+      case 'live':
+        return { background: '#d1fae5', color: '#065f46', text: 'Live Sync Active' };
+      case 'reconnecting':
+        return { background: '#fef3c7', color: '#92400e', text: 'Reconnecting...' };
+      case 'offline':
+        return { background: '#fee2e2', color: '#991b1b', text: 'Offline Mode' };
+      default:
+        return { background: '#e2e8f0', color: '#334155', text: 'Syncing' };
+    }
+  };
+
+  const currentBadge = getBadgeStyle();
+
+  return (
+    <div style={{
+      background: currentBadge.background,
+      color: currentBadge.color,
+      padding: '6px 14px',
+      borderRadius: '20px',
+      fontSize: '0.85rem',
+      fontWeight: 'bold',
+      transition: 'all 0.3s ease',
+      display: 'inline-block'
+    }}>
+      {currentBadge.text}
+    </div>
+  );
+};
+
+// Application shell layout definitions
 const AppLayout = () => {
   const { user, logout } = useAuth();
   const { isDarkMode, toggleTheme } = useTheme();
@@ -36,7 +71,7 @@ const AppLayout = () => {
     padding: '1rem', 
     borderBottom: `1px solid ${isDarkMode ? '#334155' : '#e2e8f0'}`, 
     background: isDarkMode ? '#1e293b' : '#ffffff',
-    position: 'sticky', // Keeps header at the top
+    position: 'sticky', 
     top: 0,
     zIndex: 1000
   };
@@ -60,7 +95,10 @@ const AppLayout = () => {
           <nav style={navStyle}>
             <h2 style={{ margin: 0, fontFamily: 'system-ui', fontSize: '1.2rem' }}>ProdPro</h2>
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-              <ConnectionStatus />
+              
+              {/* 🔴 FIXED: Swapped placeholder connection element for reactive HeaderBadge */}
+              <HeaderBadge />
+              
               <button onClick={toggleTheme} style={{...btnStyle, fontSize: '1.2rem', padding: '4px 8px', border: 'none'}}>
                 {isDarkMode ? '☀️' : '🌙'}
               </button>
@@ -70,12 +108,11 @@ const AppLayout = () => {
         )}
 
         {/* MAIN CONTENT AREA */}
-        {/* We add paddingBottom: 80px so the bottom text doesn't hide behind the BottomNav */}
         <main style={{ padding: '1rem', paddingBottom: user ? '80px' : '1rem', flex: 1 }}>
           <Routes>
             <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
             
-            {/* THE THREE RESTORED TABS */}
+            {/* THE THREE PROTECTED DASHBOARD TABS */}
             <Route path="/" element={<ProtectedRoute><Home /></ProtectedRoute>} />
             <Route path="/goals" element={<ProtectedRoute><Goals /></ProtectedRoute>} />
             <Route path="/calendar" element={<ProtectedRoute><Calendar /></ProtectedRoute>} />
@@ -92,14 +129,17 @@ const AppLayout = () => {
   );
 };
 
-// Main App component wrapping everything
+// Main App component wrapping context trees
 function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <Router>
-          <AppLayout />
-        </Router>
+        {/* 🔴 FIXED: Integrated SyncProvider securely inside AuthProvider to access local session parameters safely */}
+        <SyncProvider>
+          <Router>
+            <AppLayout />
+          </Router>
+        </SyncProvider>
       </AuthProvider>
     </ThemeProvider>
   );
