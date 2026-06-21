@@ -21,24 +21,20 @@ const Calendar = () => {
   const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
   const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay(); 
 
-  // 🔴 FIXED: Cache-First Hydration Strategy
   const fetchCalendarLogs = useCallback(async (showLoading = false) => {
     if (!user) return;
     if (showLoading) setIsLoading(true);
 
-    // 1. Immediately inject the hardware logs snapshot so grid items don't render blank
     const cachedLogs = getSnapshot('calendar_logs');
     if (cachedLogs && Array.isArray(cachedLogs)) {
       setLogs(cachedLogs);
     }
 
-    // 2. Halt here if network status reads offline
     if (isOffline) {
       setIsLoading(false);
       return;
     }
 
-    // 3. If online, fire async fetch loop to update cache definitions gracefully
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/calendar`, {
@@ -48,7 +44,7 @@ const Calendar = () => {
         const data = await response.json();
         if (Array.isArray(data)) {
           setLogs(data);
-          saveSnapshot('calendar_logs', data); // Seeding baseline snapshot
+          saveSnapshot('calendar_logs', data);
         }
       }
     } catch (error) {
@@ -80,12 +76,49 @@ const Calendar = () => {
   const handlePrevMonth = () => setCurrentDate(new Date(currentYear, currentMonth - 1, 1));
   const handleNextMonth = () => setCurrentDate(new Date(currentYear, currentMonth + 1, 1));
 
+  // 🔴 FIXED: Dynamic Client-Side Status Engine for Real-Time Offline Colors
   const getLogForDay = (day) => {
     const formattedMonth = String(currentMonth + 1).padStart(2, '0');
     const formattedDay = String(day).padStart(2, '0');
     const dateString = `${currentYear}-${formattedMonth}-${formattedDay}`;
-    // 🔴 FIXED: Guarded search array loop using explicit Array formatting verification
-    return Array.isArray(logs) ? logs.find(log => log.dateString === dateString) : undefined;
+    
+    const todayObj = new Date();
+    const todayString = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
+    
+    // Find base server log entry if it exists
+    let log = Array.isArray(logs) ? logs.find(l => l.dateString === dateString) : undefined;
+    
+    // Intercept today's block to compute status instantly from offline hardware snapshots
+    if (dateString === todayString) {
+      const localTasks = getSnapshot('tasks') || [];
+      const localWater = getSnapshot(`water_${todayString}`) || 0;
+      
+      const totalTasks = localTasks.length;
+      const tasksCompleted = localTasks.filter(t => t.completed).length;
+      
+      let computedStatus = 'missed'; // Default baseline state
+      const waterGoalMet = localWater >= 8;
+      const tasksGoalMet = totalTasks > 0 ? tasksCompleted === totalTasks : true;
+      
+      if (localWater > 0 || tasksCompleted > 0) {
+        if (waterGoalMet && tasksGoalMet) {
+          computedStatus = 'perfect'; // Everything completed perfectly
+        } else {
+          computedStatus = 'good'; // Progress made, partial completion
+        }
+      }
+
+      return {
+        ...log,
+        dateString,
+        waterIntake: localWater,
+        tasksCompleted,
+        totalTasks,
+        status: computedStatus
+      };
+    }
+    
+    return log;
   };
 
   const getSquareColor = (status) => {
@@ -140,7 +173,8 @@ const Calendar = () => {
                     display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold',
                     color: log?.status && log.status !== 'empty' ? '#fff' : mutedText,
                     border: isToday ? '2px solid #3b82f6' : 'none',
-                    boxShadow: isToday ? '0 0 10px rgba(59, 130, 246, 0.4)' : 'none'
+                    boxShadow: isToday ? '0 0 10px rgba(59, 130, 246, 0.4)' : 'none',
+                    transition: 'all 0.3s ease'
                   }}
                 >
                   {day}
@@ -149,6 +183,12 @@ const Calendar = () => {
             })}
           </div>
         )}
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', marginTop: '2rem', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: '16px', height: '16px', borderRadius: '4px', background: '#10b981' }}></div><span style={{ fontSize: '0.9rem', color: mutedText }}>Perfect</span></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: '16px', height: '16px', borderRadius: '4px', background: '#3b82f6' }}></div><span style={{ fontSize: '0.9rem', color: mutedText }}>Good</span></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: '16px', height: '16px', borderRadius: '4px', background: '#ef4444' }}></div><span style={{ fontSize: '0.9rem', color: mutedText }}>Missed</span></div>
       </div>
     </div>
   );
