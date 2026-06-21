@@ -21,17 +21,24 @@ const Calendar = () => {
   const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
   const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay(); 
 
+  // 🔴 FIXED: Cache-First Hydration Strategy
   const fetchCalendarLogs = useCallback(async (showLoading = false) => {
     if (!user) return;
     if (showLoading) setIsLoading(true);
 
-    if (isOffline) {
-      const cachedLogs = getSnapshot('calendar_logs') || [];
+    // 1. Immediately inject the hardware logs snapshot so grid items don't render blank
+    const cachedLogs = getSnapshot('calendar_logs');
+    if (cachedLogs && Array.isArray(cachedLogs)) {
       setLogs(cachedLogs);
+    }
+
+    // 2. Halt here if network status reads offline
+    if (isOffline) {
       setIsLoading(false);
       return;
     }
 
+    // 3. If online, fire async fetch loop to update cache definitions gracefully
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/calendar`, {
@@ -39,8 +46,10 @@ const Calendar = () => {
       });
       if (response.ok) {
         const data = await response.json();
-        setLogs(data);
-        saveSnapshot('calendar_logs', data);
+        if (Array.isArray(data)) {
+          setLogs(data);
+          saveSnapshot('calendar_logs', data); // Seeding baseline snapshot
+        }
       }
     } catch (error) {
       console.error("Failed to fetch calendar data online:", error);
@@ -75,7 +84,8 @@ const Calendar = () => {
     const formattedMonth = String(currentMonth + 1).padStart(2, '0');
     const formattedDay = String(day).padStart(2, '0');
     const dateString = `${currentYear}-${formattedMonth}-${formattedDay}`;
-    return logs.find(log => log.dateString === dateString);
+    // 🔴 FIXED: Guarded search array loop using explicit Array formatting verification
+    return Array.isArray(logs) ? logs.find(log => log.dateString === dateString) : undefined;
   };
 
   const getSquareColor = (status) => {
@@ -109,10 +119,10 @@ const Calendar = () => {
           <div>Su</div><div>Mo</div><div>Tu</div><div>We</div><div>Th</div><div>Fr</div><div>Sa</div>
         </div>
 
-        {isLoading ? (
+        {isLoading && logs.length === 0 ? (
           <p style={{ textAlign: 'center', color: mutedText, padding: '2rem 0' }}>Loading your history...</p>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px' }}>
+          <div style={{ gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px', display: 'grid' }}>
             {[...Array(firstDayOfMonth)].map((_, i) => (
               <div key={`empty-${i}`} style={{ aspectRatio: '1', borderRadius: '8px', background: 'transparent' }}></div>
             ))}

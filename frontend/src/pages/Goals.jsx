@@ -19,18 +19,24 @@ const Goals = () => {
   const [activeGoal, setActiveGoal] = useState(null);
   const [sliderValue, setSliderValue] = useState(0);
 
-  // Fetch goals with an offline fallback cache snapshot
+  // 🔴 FIXED: Cache-First Hydration Strategy
   const fetchGoals = useCallback(async (showLoading = false) => {
     if (!user) return;
     if (showLoading) setIsLoading(true);
 
-    if (isOffline) {
-      const cachedGoals = getSnapshot('goals') || [];
+    // 1. Instantly populate UI from local hardware snapshots so it never renders blank
+    const cachedGoals = getSnapshot('goals');
+    if (cachedGoals && Array.isArray(cachedGoals)) {
       setGoals(cachedGoals);
+    }
+
+    // 2. If completely offline, halt here and don't fire network errors
+    if (isOffline) {
       setIsLoading(false);
       return;
     }
 
+    // 3. If online, quietly pull fresh records down from MongoDB cluster
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/goals`, {
@@ -38,8 +44,10 @@ const Goals = () => {
       });
       if (response.ok) {
         const data = await response.json();
-        setGoals(data);
-        saveSnapshot('goals', data);
+        if (Array.isArray(data)) {
+          setGoals(data);
+          saveSnapshot('goals', data); // Refresh cache snapshot baseline
+        }
       }
     } catch (error) {
       console.error("Failed to fetch goals online:", error);
@@ -99,10 +107,7 @@ const Goals = () => {
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/goals`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ title: titleToSubmit, type: typeToSubmit, progress: 0, color: assignedColor })
       });
 
@@ -169,10 +174,7 @@ const Goals = () => {
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/goals/${activeGoal._id}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ progress: parseInt(sliderValue) })
       });
 
@@ -191,8 +193,9 @@ const Goals = () => {
     }
   };
 
-  const shortTermGoals = goals.filter(g => g.type === 'short-term');
-  const longTermGoals = goals.filter(g => g.type === 'long-term');
+  // 🔴 FIXED: Protected filters using strict Array validation to eliminate crash loops
+  const shortTermGoals = Array.isArray(goals) ? goals.filter(g => g.type === 'short-term') : [];
+  const longTermGoals = Array.isArray(goals) ? goals.filter(g => g.type === 'long-term') : [];
 
   const textColor = isDarkMode ? '#f8fafc' : '#0f172a';
   const mutedText = isDarkMode ? '#94a3b8' : '#64748b';
@@ -226,7 +229,7 @@ const Goals = () => {
         </div>
       </form>
 
-      {isLoading ? (
+      {isLoading && goals.length === 0 ? (
         <p style={{ textAlign: 'center', color: mutedText }}>Loading goals...</p>
       ) : (
         <>
