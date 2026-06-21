@@ -7,7 +7,8 @@ import './Home.css';
 const Home = () => {
   const { isDarkMode } = useTheme();
   const { user } = useAuth();
-  const { isOffline, addToQueue, saveSnapshot, getSnapshot } = useSync();
+  // 🔴 FIXED: Extracted networkStatus directly to enforce strict live checking boundaries
+  const { networkStatus, addToQueue, saveSnapshot, getSnapshot } = useSync();
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
 
   const [time, setTime] = useState(new Date());
@@ -19,13 +20,16 @@ const Home = () => {
   const [newTaskText, setNewTaskText] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load baseline states (Checks device snapshots first if offline)
+  const isLive = networkStatus === 'live';
+
+  // Load baseline states (Checks device snapshots first if offline or reconnecting)
   const fetchDashboardData = useCallback(async (showLoading = false) => {
     if (!user) return;
     if (showLoading) setIsLoading(true);
 
-    // 🔴 OFFLINE RECONCILIATION: Read immediately from snapshot cache arrays if offline
-    if (isOffline) {
+    // 🔴 FIXED: If NOT strictly live (offline or reconnecting), read exclusively from snapshots
+    // This stops Home from fetching un-synced data mid-queue replay
+    if (!isLive) {
       const cachedTasks = getSnapshot('tasks') || [];
       const cachedWater = getSnapshot(`water_${todayDateString}`) || 0;
       setTasks(cachedTasks);
@@ -42,7 +46,7 @@ const Home = () => {
       if (taskRes.ok) {
         const fetchedTasks = await taskRes.json();
         setTasks(fetchedTasks);
-        saveSnapshot('tasks', fetchedTasks); // Update cache snapshot
+        saveSnapshot('tasks', fetchedTasks);
       }
 
       const calRes = await fetch(`${API_URL}/calendar`, { headers: { 'Authorization': `Bearer ${token}` } });
@@ -51,14 +55,14 @@ const Home = () => {
         const todayLog = logs.find(log => log.dateString === todayDateString);
         const waterCount = todayLog ? todayLog.waterIntake : 0;
         setWaterGlasses(waterCount);
-        saveSnapshot(`water_${todayDateString}`, waterCount); // Update cache snapshot
+        saveSnapshot(`water_${todayDateString}`, waterCount);
       }
     } catch (error) {
       console.error("Online dashboard fetch failed, falling back to local snapshots.", error);
     } finally {
       setIsLoading(false);
     }
-  }, [API_URL, user, todayDateString, isOffline, getSnapshot, saveSnapshot]);
+  }, [API_URL, user, todayDateString, isLive, getSnapshot, saveSnapshot]);
 
   // Sync state loops
   useEffect(() => {
@@ -66,10 +70,10 @@ const Home = () => {
     fetchDashboardData(true);
 
     const interval = setInterval(() => {
-      if (!isOffline) fetchDashboardData(false);
+      if (isLive) fetchDashboardData(false);
     }, 5000);
 
-    const handleFocusSync = () => { if (!isOffline) fetchDashboardData(false); };
+    const handleFocusSync = () => { if (isLive) fetchDashboardData(false); };
     window.addEventListener('focus', handleFocusSync);
     window.addEventListener('sync-complete', handleFocusSync);
 
@@ -78,15 +82,16 @@ const Home = () => {
       window.removeEventListener('focus', handleFocusSync);
       window.removeEventListener('sync-complete', handleFocusSync);
     };
-  }, [user, fetchDashboardData, isOffline]);
+  }, [user, fetchDashboardData, isLive]);
 
   // Background logging engine trigger
   useEffect(() => {
     if (isLoading) return;
 
     const syncToCalendar = async () => {
-      // If offline, preserve state in snapshots, bypass directly writing background calendar loop crashes
-      if (isOffline) {
+      // 🔴 FIXED: Halt background automated pushes if we aren't completely LIVE.
+      // This protects the outbox queue replay loop from getting data overwritten mid-transit.
+      if (!isLive) {
         saveSnapshot(`water_${todayDateString}`, waterGlasses);
         return;
       }
@@ -106,7 +111,7 @@ const Home = () => {
       } catch (e) { console.error("Database tracking loop sync failure", e); }
     };
     syncToCalendar();
-  }, [waterGlasses, tasks, isLoading, API_URL, todayDateString, isOffline, saveSnapshot]);
+  }, [waterGlasses, tasks, isLoading, API_URL, todayDateString, isLive, saveSnapshot]);
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
@@ -127,8 +132,7 @@ const Home = () => {
     const textToSubmit = newTaskText;
     setNewTaskText('');
 
-    if (isOffline) {
-      // 🔴 STAGE OUTBOX REQUEST: Save payload parameters into background queue structure
+    if (!isLive) {
       addToQueue('ADD_TASK', '/tasks', 'POST', { text: textToSubmit });
       return;
     }
@@ -158,7 +162,7 @@ const Home = () => {
     setTasks(updatedTasks);
     saveSnapshot('tasks', updatedTasks);
 
-    if (isOffline) {
+    if (!isLive) {
       addToQueue('TOGGLE_TASK', `/tasks/${taskId}`, 'PUT');
       return;
     }
@@ -177,7 +181,7 @@ const Home = () => {
     setTasks(filteredTasks);
     saveSnapshot('tasks', filteredTasks);
 
-    if (isOffline) {
+    if (!isLive) {
       addToQueue('DELETE_TASK', `/tasks/${taskId}`, 'DELETE');
       return;
     }
@@ -193,8 +197,7 @@ const Home = () => {
   const handleWaterClick = (count) => {
     setWaterGlasses(count);
     saveSnapshot(`water_${todayDateString}`, count);
-    if (isOffline) {
-      // Sync water states completely down using generic calendar processing outboxes
+    if (!isLive) {
       addToQueue('SYNC_WATER', '/calendar/sync', 'POST', {
         dateString: todayDateString,
         waterIntake: count,
