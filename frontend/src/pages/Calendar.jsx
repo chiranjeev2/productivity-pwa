@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
+import { useSync } from '../context/SyncContext';
 
 const Calendar = () => {
   const { isDarkMode } = useTheme();
   const { user } = useAuth();
+  const { isOffline, saveSnapshot, getSnapshot } = useSync();
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
 
   const [logs, setLogs] = useState([]);
@@ -16,14 +18,20 @@ const Calendar = () => {
   const currentMonth = currentDate.getMonth(); 
   
   const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-  
   const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
   const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay(); 
 
-  // Memoized fetch function so it can be safely used across intervals and focus listeners
   const fetchCalendarLogs = useCallback(async (showLoading = false) => {
     if (!user) return;
     if (showLoading) setIsLoading(true);
+
+    if (isOffline) {
+      const cachedLogs = getSnapshot('calendar_logs') || [];
+      setLogs(cachedLogs);
+      setIsLoading(false);
+      return;
+    }
+
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/calendar`, {
@@ -32,45 +40,36 @@ const Calendar = () => {
       if (response.ok) {
         const data = await response.json();
         setLogs(data);
+        saveSnapshot('calendar_logs', data);
       }
     } catch (error) {
-      console.error("Failed to fetch calendar data:", error);
+      console.error("Failed to fetch calendar data online:", error);
     } finally {
       setIsLoading(false);
     }
-  }, [API_URL, user]);
+  }, [API_URL, user, isOffline, getSnapshot, saveSnapshot]);
 
-  // 🔴 LIVE SYNC ENGINE: Controls Background Polling & Focus Re-validation
   useEffect(() => {
     if (!user) return;
-
-    // Initial load
     fetchCalendarLogs(true);
 
-    // 1. Smart Polling: Fetch background changes every 5 seconds
     const interval = setInterval(() => {
-      fetchCalendarLogs(false); // false means don't show flickering loading screens
+      if (!isOffline) fetchCalendarLogs(false);
     }, 5000);
 
-    // 2. Focus Triggers: Sync instantly when user unlocks phone or switches tabs
-    const handleFocus = () => fetchCalendarLogs(false);
-    window.addEventListener('focus', handleFocus);
-    window.addEventListener('visibilitychange', handleFocus);
+    const handleFocusSync = () => { if (!isOffline) fetchCalendarLogs(false); };
+    window.addEventListener('focus', handleFocusSync);
+    window.addEventListener('sync-complete', handleFocusSync);
 
     return () => {
       clearInterval(interval);
-      window.removeEventListener('focus', handleFocus);
-      window.removeEventListener('visibilitychange', handleFocus);
+      window.removeEventListener('focus', handleFocusSync);
+      window.removeEventListener('sync-complete', handleFocusSync);
     };
-  }, [user, fetchCalendarLogs]);
+  }, [user, fetchCalendarLogs, isOffline]);
 
-  const handlePrevMonth = () => {
-    setCurrentDate(new Date(currentYear, currentMonth - 1, 1));
-  };
-
-  const handleNextMonth = () => {
-    setCurrentDate(new Date(currentYear, currentMonth + 1, 1));
-  };
+  const handlePrevMonth = () => setCurrentDate(new Date(currentYear, currentMonth - 1, 1));
+  const handleNextMonth = () => setCurrentDate(new Date(currentYear, currentMonth + 1, 1));
 
   const getLogForDay = (day) => {
     const formattedMonth = String(currentMonth + 1).padStart(2, '0');
@@ -94,26 +93,16 @@ const Calendar = () => {
 
   return (
     <div style={{ color: textColor, maxWidth: '600px', margin: '0 auto', paddingBottom: '100px' }}>
-      
       <div style={{ marginBottom: '2rem', textAlign: 'center' }}>
         <h1 style={{ fontSize: '2rem', margin: '0 0 0.5rem 0', fontWeight: '800' }}>📊 Consistency Tracker</h1>
-        <p style={{ fontSize: '1.1rem', color: mutedText, margin: 0, fontWeight: '500' }}>
-          Build the chain, day by day.
-        </p>
+        <p style={{ fontSize: '1.1rem', color: mutedText, margin: 0, fontWeight: '500' }}>Build the chain, day by day.</p>
       </div>
 
       <div style={{ background: cardBg, padding: '1.5rem', borderRadius: '16px', border: `1px solid ${isDarkMode ? '#334155' : '#e2e8f0'}` }}>
-        
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-          <button onClick={handlePrevMonth} style={{ background: 'transparent', border: 'none', color: textColor, fontSize: '1.5rem', cursor: 'pointer', padding: '0 10px' }}>
-            &#8592;
-          </button>
-          <h2 style={{ margin: 0, fontSize: '1.3rem' }}>
-            {monthNames[currentMonth]} {currentYear}
-          </h2>
-          <button onClick={handleNextMonth} style={{ background: 'transparent', border: 'none', color: textColor, fontSize: '1.5rem', cursor: 'pointer', padding: '0 10px' }}>
-            &#8594;
-          </button>
+          <button onClick={handlePrevMonth} style={{ background: 'transparent', border: 'none', color: textColor, fontSize: '1.5rem', cursor: 'pointer' }}>&#8592;</button>
+          <h2 style={{ margin: 0, fontSize: '1.3rem' }}>{monthNames[currentMonth]} {currentYear}</h2>
+          <button onClick={handleNextMonth} style={{ background: 'transparent', border: 'none', color: textColor, fontSize: '1.5rem', cursor: 'pointer' }}>&#8594;</button>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px', marginBottom: '1rem', textAlign: 'center', fontWeight: 'bold', color: mutedText }}>
@@ -124,7 +113,6 @@ const Calendar = () => {
           <p style={{ textAlign: 'center', color: mutedText, padding: '2rem 0' }}>Loading your history...</p>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px' }}>
-            
             {[...Array(firstDayOfMonth)].map((_, i) => (
               <div key={`empty-${i}`} style={{ aspectRatio: '1', borderRadius: '8px', background: 'transparent' }}></div>
             ))}
@@ -138,18 +126,12 @@ const Calendar = () => {
                 <div 
                   key={day} 
                   style={{ 
-                    aspectRatio: '1', 
-                    borderRadius: '8px', 
-                    background: getSquareColor(log?.status),
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontWeight: 'bold',
+                    aspectRatio: '1', borderRadius: '8px', background: getSquareColor(log?.status),
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold',
                     color: log?.status && log.status !== 'empty' ? '#fff' : mutedText,
                     border: isToday ? '2px solid #3b82f6' : 'none',
                     boxShadow: isToday ? '0 0 10px rgba(59, 130, 246, 0.4)' : 'none'
                   }}
-                  title={log ? `Water: ${log.waterIntake} | Tasks: ${log.tasksCompleted}` : 'No data'}
                 >
                   {day}
                 </div>
@@ -157,12 +139,6 @@ const Calendar = () => {
             })}
           </div>
         )}
-      </div>
-
-      <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', marginTop: '2rem', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: '16px', height: '16px', borderRadius: '4px', background: '#10b981' }}></div><span style={{ fontSize: '0.9rem', color: mutedText }}>Perfect</span></div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: '16px', height: '16px', borderRadius: '4px', background: '#3b82f6' }}></div><span style={{ fontSize: '0.9rem', color: mutedText }}>Good</span></div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: '16px', height: '16px', borderRadius: '4px', background: '#ef4444' }}></div><span style={{ fontSize: '0.9rem', color: mutedText }}>Missed</span></div>
       </div>
     </div>
   );
