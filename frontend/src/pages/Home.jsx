@@ -22,36 +22,30 @@ const Home = () => {
 
   const isLive = networkStatus === 'live';
 
-  // Read current outbox queue length to display live metric counters
   const updateQueueCount = useCallback(() => {
     const queue = JSON.parse(localStorage.getItem('prodpro_sync_queue')) || [];
     setQueueCount(queue.length);
   }, []);
 
-  // Load baseline states with Cache-First Hydration & Automatic Next-Day Unmarking
   const fetchDashboardData = useCallback(async (showLoading = false) => {
     if (!user) return;
     if (showLoading) setIsLoading(true);
     updateQueueCount();
 
-    // 1. Instantly pull data from snapshots for seamless loading speed
     const cachedTasks = getSnapshot('tasks') || [];
     const cachedWater = getSnapshot(`water_${todayDateString}`) || 0;
     
     let activeTasks = cachedTasks;
     let activeWater = cachedWater;
 
-    // 🔴 AUTOMATED DAILY RESET ENGINE: Detects date shifts and unmarks tasks
     const lastOpenedDate = localStorage.getItem('prodpro_last_opened_date');
     if (lastOpenedDate && lastOpenedDate !== todayDateString) {
-      // Date changed! Unmark all completed states back to false for a clean focus sheet
       activeTasks = cachedTasks.map(task => ({ ...task, completed: false }));
-      activeWater = 0; // Reset hydration tracking counter for the new day
+      activeWater = 0;
       
       saveSnapshot('tasks', activeTasks);
       saveSnapshot(`water_${todayDateString}`, activeWater);
 
-      // Reconcile the unmarking back to the cloud database
       activeTasks.forEach(task => {
         if (!isLive) {
           addToQueue('TOGGLE_TASK', `/tasks/${task._id}`, 'PUT');
@@ -78,7 +72,6 @@ const Home = () => {
       if (taskRes.ok) {
         let fetchedTasks = await taskRes.json();
         
-        // Double check server array dates in case user didn't open the frontend during date shift
         if (lastOpenedDate && lastOpenedDate !== todayDateString) {
           fetchedTasks = fetchedTasks.map(t => ({ ...t, completed: false }));
         }
@@ -104,7 +97,6 @@ const Home = () => {
     }
   }, [API_URL, user, todayDateString, isLive, getSnapshot, saveSnapshot, addToQueue, updateQueueCount]);
 
-  // Sync timers and focus hooks
   useEffect(() => {
     if (!user) return;
     fetchDashboardData(true);
@@ -125,7 +117,6 @@ const Home = () => {
     };
   }, [user, fetchDashboardData, isLive, updateQueueCount]);
 
-  // Background logging loop trigger
   useEffect(() => {
     if (isLoading) return;
 
@@ -157,7 +148,6 @@ const Home = () => {
     return () => clearInterval(timer);
   }, []);
 
-  // Handlers
   const handleAddTask = async (e) => {
     e.preventDefault();
     if (!newTaskText.trim()) return;
@@ -172,7 +162,7 @@ const Home = () => {
     setNewTaskText('');
 
     if (!isLive) {
-      addToQueue('ADD_TASK', '/tasks', 'POST', { text: textToSubmit });
+      addToQueue('ADD_TASK', '/tasks', 'POST', { text: textToSubmit }, tempId);
       updateQueueCount();
       return;
     }
@@ -250,7 +240,6 @@ const Home = () => {
     }
   };
 
-  // 🔴 VIBE CHECK ENGINE: Renders state specific message blocks to the dashboard
   const getVibeStatusCard = () => {
     switch (networkStatus) {
       case 'live':
@@ -282,7 +271,6 @@ const Home = () => {
   };
 
   const vibe = getVibeStatusCard();
-
   const hour = time.getHours();
   let greeting = 'Good Night 🌙';
   if (hour >= 5 && hour < 12) greeting = 'Good Morning ☀️';
@@ -295,8 +283,6 @@ const Home = () => {
 
   return (
     <div style={{ color: textColor, maxWidth: '600px', margin: '0 auto', paddingBottom: '100px' }}>
-      
-      {/* GREETING HEADER */}
       <div style={{ marginBottom: '1.5rem', textAlign: 'center' }}>
         <h1 style={{ fontSize: '2rem', margin: '0 0 0.5rem 0', fontWeight: '800' }}>{greeting}</h1>
         <p style={{ fontSize: '1.1rem', color: isDarkMode ? '#94a3b8' : '#64748b', margin: 0, fontWeight: '500' }}>
@@ -304,22 +290,13 @@ const Home = () => {
         </p>
       </div>
 
-      {/* 🔴 NEW: ADVANCED VIBE BANNER CONTAINER */}
       {vibe && (
-        <div style={{
-          border: vibe.border,
-          background: vibe.background,
-          padding: '1rem',
-          borderRadius: '12px',
-          marginBottom: '2rem',
-          transition: 'all 0.3s ease'
-        }}>
+        <div style={{ border: vibe.border, background: vibe.background, padding: '1rem', borderRadius: '12px', marginBottom: '2rem', transition: 'all 0.3s ease' }}>
           <h4 style={{ margin: '0 0 4px 0', fontSize: '1rem', fontWeight: '700' }}>{vibe.title}</h4>
           <p style={{ margin: 0, fontSize: '0.88rem', opacity: 0.85, lineHeight: '1.4' }}>{vibe.desc}</p>
         </div>
       )}
 
-      {/* HYDRATION WIDGET */}
       <div style={{ background: cardBg, padding: '1.5rem', borderRadius: '16px', border: `1px solid ${borderColor}`, marginBottom: '2rem' }}>
         <h3 style={{ margin: '0 0 1.2rem 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ fontSize: '1.2rem' }}>💧 Daily Hydration</span>
@@ -344,7 +321,6 @@ const Home = () => {
         </div>
       </div>
 
-      {/* TODAY'S FOCUS WORKSPACE */}
       <div style={{ background: cardBg, padding: '1.5rem', borderRadius: '16px', border: `1px solid ${borderColor}` }}>
         <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.2rem' }}>✅ Today's Focus</h3>
         <form onSubmit={handleAddTask} className="task-form">

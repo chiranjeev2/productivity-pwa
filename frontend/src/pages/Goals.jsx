@@ -19,24 +19,20 @@ const Goals = () => {
   const [activeGoal, setActiveGoal] = useState(null);
   const [sliderValue, setSliderValue] = useState(0);
 
-  // 🔴 FIXED: Cache-First Hydration Strategy
   const fetchGoals = useCallback(async (showLoading = false) => {
     if (!user) return;
     if (showLoading) setIsLoading(true);
 
-    // 1. Instantly populate UI from local hardware snapshots so it never renders blank
     const cachedGoals = getSnapshot('goals');
     if (cachedGoals && Array.isArray(cachedGoals)) {
       setGoals(cachedGoals);
     }
 
-    // 2. If completely offline, halt here and don't fire network errors
     if (isOffline) {
       setIsLoading(false);
       return;
     }
 
-    // 3. If online, quietly pull fresh records down from MongoDB cluster
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/goals`, {
@@ -46,7 +42,7 @@ const Goals = () => {
         const data = await response.json();
         if (Array.isArray(data)) {
           setGoals(data);
-          saveSnapshot('goals', data); // Refresh cache snapshot baseline
+          saveSnapshot('goals', data);
         }
       }
     } catch (error) {
@@ -99,31 +95,7 @@ const Goals = () => {
     setNewTitle('');
 
     if (isOffline) {
-      // 🔴 FIXED: Passing tempId into outbox queue array for goals tracking integrity
       addToQueue('ADD_GOAL', '/goals', 'POST', { title: titleToSubmit, type: typeToSubmit, progress: 0, color: assignedColor }, tempId);
-      return;
-    }
-
-    // ... rest of your original online try/catch block remains unchanged
-    
-    const temporaryGoal = {
-      _id: tempId,
-      title: newTitle,
-      type: newType,
-      progress: 0,
-      color: assignedColor
-    };
-
-    const updatedGoals = [temporaryGoal, ...goals];
-    setGoals(updatedGoals);
-    saveSnapshot('goals', updatedGoals);
-
-    const titleToSubmit = newTitle;
-    const typeToSubmit = newType;
-    setNewTitle('');
-
-    if (isOffline) {
-      addToQueue('ADD_GOAL', '/goals', 'POST', { title: titleToSubmit, type: typeToSubmit, progress: 0, color: assignedColor });
       return;
     }
 
@@ -217,7 +189,6 @@ const Goals = () => {
     }
   };
 
-  // 🔴 FIXED: Protected filters using strict Array validation to eliminate crash loops
   const shortTermGoals = Array.isArray(goals) ? goals.filter(g => g.type === 'short-term') : [];
   const longTermGoals = Array.isArray(goals) ? goals.filter(g => g.type === 'long-term') : [];
 
