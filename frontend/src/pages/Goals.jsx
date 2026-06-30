@@ -90,6 +90,7 @@ const Goals = () => {
     setGoals(updatedGoals);
     saveSnapshot('goals', updatedGoals);
 
+    // Capture values explicitly before resetting input states
     const titleToSubmit = newTitle;
     const typeToSubmit = newType;
     setNewTitle('');
