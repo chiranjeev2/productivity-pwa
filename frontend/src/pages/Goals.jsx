@@ -99,6 +99,30 @@ const Goals = () => {
     setNewTitle('');
 
     if (isOffline) {
+      // 🔴 FIXED: Passing tempId into outbox queue array for goals tracking integrity
+      addToQueue('ADD_GOAL', '/goals', 'POST', { title: titleToSubmit, type: typeToSubmit, progress: 0, color: assignedColor }, tempId);
+      return;
+    }
+
+    // ... rest of your original online try/catch block remains unchanged
+    
+    const temporaryGoal = {
+      _id: tempId,
+      title: newTitle,
+      type: newType,
+      progress: 0,
+      color: assignedColor
+    };
+
+    const updatedGoals = [temporaryGoal, ...goals];
+    setGoals(updatedGoals);
+    saveSnapshot('goals', updatedGoals);
+
+    const titleToSubmit = newTitle;
+    const typeToSubmit = newType;
+    setNewTitle('');
+
+    if (isOffline) {
       addToQueue('ADD_GOAL', '/goals', 'POST', { title: titleToSubmit, type: typeToSubmit, progress: 0, color: assignedColor });
       return;
     }

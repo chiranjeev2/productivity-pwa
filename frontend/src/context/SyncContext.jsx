@@ -3,11 +3,9 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 const SyncContext = createContext();
 
 export const SyncProvider = ({ children }) => {
-  // 3 Modes: 'live' (Green), 'reconnecting' (Yellow), 'offline' (Red)
   const [networkStatus, setNetworkStatus] = useState(navigator.onLine ? 'live' : 'offline');
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
 
-  // State hooks to keep track of network status across components
   useEffect(() => {
     const handleOnline = () => {
       setNetworkStatus('reconnecting');
@@ -18,7 +16,6 @@ export const SyncProvider = ({ children }) => {
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
-    // Run an initial check on boot to process any stuck queued actions
     if (navigator.onLine) processSyncQueue();
 
     return () => {
@@ -27,21 +24,20 @@ export const SyncProvider = ({ children }) => {
     };
   }, []);
 
-  // --- OUTBOX ARCHITECTURE ---
-  // Read and store queued background operations safely in hardware memory
   const getQueue = () => JSON.parse(localStorage.getItem('prodpro_sync_queue')) || [];
   const saveQueue = (queue) => localStorage.setItem('prodpro_sync_queue', JSON.stringify(queue));
 
-  const addToQueue = useCallback((action, endpoint, method, payload = null) => {
+  // 🔴 FIXED: Added optional tempId parameter to map client IDs to database keys
+  const addToQueue = useCallback((action, endpoint, method, payload = null, tempId = null) => {
     const queue = getQueue();
-    const newRequest = { id: Date.now().toString(), action, endpoint, method, payload };
+    const newRequest = { id: Date.now().toString(), action, endpoint, method, payload, tempId };
     queue.push(newRequest);
     saveQueue(queue);
   }, []);
 
-  // Sequential execution engine to replay cached changes back to MongoDB in order
+  // 🔴 FIXED: Sequential Replay Engine with Dynamic Identifier Rewriting
   const processSyncQueue = async () => {
-    const queue = getQueue();
+    let queue = getQueue();
     if (queue.length === 0) {
       setNetworkStatus('live');
       return;
@@ -51,7 +47,20 @@ export const SyncProvider = ({ children }) => {
     const token = localStorage.getItem('token');
     if (!token) return;
 
-    for (const req of queue) {
+    // Dictionary tracking runtime ID translations: { tempId: serverId }
+    const idMap = {};
+
+    while (queue.length > 0) {
+      let req = queue[0]; // Intercept the head element of the transactional queue
+
+      // Dynamic URL scanning: Rewrite endpoint string values if they reference a mapped client ID
+      let targetEndpoint = req.endpoint;
+      Object.keys(idMap).forEach(tempId => {
+        if (targetEndpoint.includes(tempId)) {
+          targetEndpoint = targetEndpoint.replace(tempId, idMap[tempId]);
+        }
+      });
+
       try {
         const options = {
           method: req.method,
@@ -62,27 +71,40 @@ export const SyncProvider = ({ children }) => {
         };
         if (req.payload) options.body = JSON.stringify(req.payload);
 
-        const response = await fetch(`${API_URL}${req.endpoint}`, options);
+        const response = await fetch(`${API_URL}${targetEndpoint}`, options);
+        
         if (response.ok) {
-          // Task successfully recorded on remote database node, remove from client queue
-          const currentQueue = getQueue();
+          const resData = await response.json();
+
+          // If operation was an creation event, record the true server key mapping allocation
+          if ((req.action === 'ADD_TASK' || req.action === 'ADD_GOAL') && resData && resData._id && req.tempId) {
+            idMap[req.tempId] = resData._id;
+          }
+
+          // Safely evict processed action block out of hardware arrays
+          const currentQueue = JSON.parse(localStorage.getItem('prodpro_sync_queue')) || [];
           const updatedQueue = currentQueue.filter(item => item.id !== req.id);
           saveQueue(updatedQueue);
+          
+          // Re-index remaining array components for subsequent runtime evaluations
+          queue = updatedQueue;
+        } else {
+          // Server returned error flag, fallback to offline state safety
+          setNetworkStatus('offline');
+          return;
         }
       } catch (error) {
-        console.error("Reconnection replay sync failed. Retrying shortly.", error);
+        console.error("Outbox replay transaction failure:", error);
         setNetworkStatus('offline');
-        return; // Halt stream loop if server goes down again mid-replay
+        return;
       }
     }
 
     setNetworkStatus('live');
-    // Trigger a page event so components know they need to refresh their states from the cloud
+    // Notify application views to fetch clean, server-validated datasets
     window.dispatchEvent(new Event('sync-complete'));
   };
 
-  // --- DATA SNAPSHOT CACHING MODULES ---
-  // Saves copies of data down to device so updates remain visible during an offline reload
   const saveSnapshot = useCallback((key, data) => {
     localStorage.setItem(`snapshot_${key}`, JSON.stringify(data));
   }, []);
