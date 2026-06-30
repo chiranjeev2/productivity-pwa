@@ -7,7 +7,6 @@ import './Home.css';
 const Home = () => {
   const { isDarkMode } = useTheme();
   const { user } = useAuth();
-  // 🔴 FIXED: Extracted networkStatus directly to enforce strict live checking boundaries
   const { networkStatus, addToQueue, saveSnapshot, getSnapshot } = useSync();
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
 
@@ -19,21 +18,54 @@ const Home = () => {
   const [tasks, setTasks] = useState([]);
   const [newTaskText, setNewTaskText] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [queueCount, setQueueCount] = useState(0);
 
   const isLive = networkStatus === 'live';
 
-  // Load baseline states (Checks device snapshots first if offline or reconnecting)
+  // Read current outbox queue length to display live metric counters
+  const updateQueueCount = useCallback(() => {
+    const queue = JSON.parse(localStorage.getItem('prodpro_sync_queue')) || [];
+    setQueueCount(queue.length);
+  }, []);
+
+  // Load baseline states with Cache-First Hydration & Automatic Next-Day Unmarking
   const fetchDashboardData = useCallback(async (showLoading = false) => {
     if (!user) return;
     if (showLoading) setIsLoading(true);
+    updateQueueCount();
 
-    // 🔴 FIXED: If NOT strictly live (offline or reconnecting), read exclusively from snapshots
-    // This stops Home from fetching un-synced data mid-queue replay
+    // 1. Instantly pull data from snapshots for seamless loading speed
+    const cachedTasks = getSnapshot('tasks') || [];
+    const cachedWater = getSnapshot(`water_${todayDateString}`) || 0;
+    
+    let activeTasks = cachedTasks;
+    let activeWater = cachedWater;
+
+    // 🔴 AUTOMATED DAILY RESET ENGINE: Detects date shifts and unmarks tasks
+    const lastOpenedDate = localStorage.getItem('prodpro_last_opened_date');
+    if (lastOpenedDate && lastOpenedDate !== todayDateString) {
+      // Date changed! Unmark all completed states back to false for a clean focus sheet
+      activeTasks = cachedTasks.map(task => ({ ...task, completed: false }));
+      activeWater = 0; // Reset hydration tracking counter for the new day
+      
+      saveSnapshot('tasks', activeTasks);
+      saveSnapshot(`water_${todayDateString}`, activeWater);
+
+      // Reconcile the unmarking back to the cloud database
+      activeTasks.forEach(task => {
+        if (!isLive) {
+          addToQueue('TOGGLE_TASK', `/tasks/${task._id}`, 'PUT');
+        } else {
+          const token = localStorage.getItem('token');
+          fetch(`${API_URL}/tasks/${task._id}`, { method: 'PUT', headers: { 'Authorization': `Bearer ${token}` } });
+        }
+      });
+    }
+    localStorage.setItem('prodpro_last_opened_date', todayDateString);
+
     if (!isLive) {
-      const cachedTasks = getSnapshot('tasks') || [];
-      const cachedWater = getSnapshot(`water_${todayDateString}`) || 0;
-      setTasks(cachedTasks);
-      setWaterGlasses(cachedWater);
+      setTasks(activeTasks);
+      setWaterGlasses(activeWater);
       setIsLoading(false);
       return;
     }
@@ -44,7 +76,13 @@ const Home = () => {
 
       const taskRes = await fetch(`${API_URL}/tasks`, { headers: { 'Authorization': `Bearer ${token}` } });
       if (taskRes.ok) {
-        const fetchedTasks = await taskRes.json();
+        let fetchedTasks = await taskRes.json();
+        
+        // Double check server array dates in case user didn't open the frontend during date shift
+        if (lastOpenedDate && lastOpenedDate !== todayDateString) {
+          fetchedTasks = fetchedTasks.map(t => ({ ...t, completed: false }));
+        }
+
         setTasks(fetchedTasks);
         saveSnapshot('tasks', fetchedTasks);
       }
@@ -58,22 +96,25 @@ const Home = () => {
         saveSnapshot(`water_${todayDateString}`, waterCount);
       }
     } catch (error) {
-      console.error("Online dashboard fetch failed, falling back to local snapshots.", error);
+      console.error("Online dashboard fetch failed, running local caches.", error);
+      setTasks(activeTasks);
+      setWaterGlasses(activeWater);
     } finally {
       setIsLoading(false);
     }
-  }, [API_URL, user, todayDateString, isLive, getSnapshot, saveSnapshot]);
+  }, [API_URL, user, todayDateString, isLive, getSnapshot, saveSnapshot, addToQueue, updateQueueCount]);
 
-  // Sync state loops
+  // Sync timers and focus hooks
   useEffect(() => {
     if (!user) return;
     fetchDashboardData(true);
 
     const interval = setInterval(() => {
       if (isLive) fetchDashboardData(false);
+      updateQueueCount();
     }, 5000);
 
-    const handleFocusSync = () => { if (isLive) fetchDashboardData(false); };
+    const handleFocusSync = () => { if (isLive) fetchDashboardData(false); updateQueueCount(); };
     window.addEventListener('focus', handleFocusSync);
     window.addEventListener('sync-complete', handleFocusSync);
 
@@ -82,15 +123,13 @@ const Home = () => {
       window.removeEventListener('focus', handleFocusSync);
       window.removeEventListener('sync-complete', handleFocusSync);
     };
-  }, [user, fetchDashboardData, isLive]);
+  }, [user, fetchDashboardData, isLive, updateQueueCount]);
 
-  // Background logging engine trigger
+  // Background logging loop trigger
   useEffect(() => {
     if (isLoading) return;
 
     const syncToCalendar = async () => {
-      // 🔴 FIXED: Halt background automated pushes if we aren't completely LIVE.
-      // This protects the outbox queue replay loop from getting data overwritten mid-transit.
       if (!isLive) {
         saveSnapshot(`water_${todayDateString}`, waterGlasses);
         return;
@@ -108,7 +147,7 @@ const Home = () => {
             totalTasks: tasks.length
           })
         });
-      } catch (e) { console.error("Database tracking loop sync failure", e); }
+      } catch (e) { console.error("Sync failure", e); }
     };
     syncToCalendar();
   }, [waterGlasses, tasks, isLoading, API_URL, todayDateString, isLive, saveSnapshot]);
@@ -118,7 +157,7 @@ const Home = () => {
     return () => clearInterval(timer);
   }, []);
 
-  // --- ACTIONS WITH OFFLINE INTERCEPTION COMPILING ---
+  // Handlers
   const handleAddTask = async (e) => {
     e.preventDefault();
     if (!newTaskText.trim()) return;
@@ -134,6 +173,7 @@ const Home = () => {
 
     if (!isLive) {
       addToQueue('ADD_TASK', '/tasks', 'POST', { text: textToSubmit });
+      updateQueueCount();
       return;
     }
 
@@ -164,6 +204,7 @@ const Home = () => {
 
     if (!isLive) {
       addToQueue('TOGGLE_TASK', `/tasks/${taskId}`, 'PUT');
+      updateQueueCount();
       return;
     }
 
@@ -183,6 +224,7 @@ const Home = () => {
 
     if (!isLive) {
       addToQueue('DELETE_TASK', `/tasks/${taskId}`, 'DELETE');
+      updateQueueCount();
       return;
     }
 
@@ -204,8 +246,42 @@ const Home = () => {
         tasksCompleted: tasks.filter(t => t.completed).length,
         totalTasks: tasks.length
       });
+      updateQueueCount();
     }
   };
+
+  // 🔴 VIBE CHECK ENGINE: Renders state specific message blocks to the dashboard
+  const getVibeStatusCard = () => {
+    switch (networkStatus) {
+      case 'live':
+        return {
+          border: '1px solid #10b981',
+          background: isDarkMode ? 'rgba(16, 185, 129, 0.1)' : '#f0fdf4',
+          title: '✨ Cloud Synchronized',
+          desc: 'Your metrics are perfectly secure and updated across all active endpoints.'
+        };
+      case 'reconnecting':
+        return {
+          border: '1px solid #f59e0b',
+          background: isDarkMode ? 'rgba(245, 158, 11, 0.1)' : '#fffbeb',
+          title: `🔄 Replaying Outbox Queue (${queueCount})`,
+          desc: 'Uploading staged actions sequentially back to the cluster server node...'
+        };
+      case 'offline':
+        return {
+          border: '1px solid #ef4444',
+          background: isDarkMode ? 'rgba(239, 68, 68, 0.1)' : '#fef2f2',
+          title: queueCount > 0 ? `📦 Staging Changes (${queueCount} Queued)` : '💾 Operating Offline',
+          desc: queueCount > 0 
+            ? 'Modifications are running on localized state snapshots and will auto-sync on reconnect.'
+            : 'Serving high-speed local data instances. Network polling is cleanly paused.'
+        };
+      default:
+        return null;
+    }
+  };
+
+  const vibe = getVibeStatusCard();
 
   const hour = time.getHours();
   let greeting = 'Good Night 🌙';
@@ -219,13 +295,31 @@ const Home = () => {
 
   return (
     <div style={{ color: textColor, maxWidth: '600px', margin: '0 auto', paddingBottom: '100px' }}>
-      <div style={{ marginBottom: '2rem', textAlign: 'center' }}>
+      
+      {/* GREETING HEADER */}
+      <div style={{ marginBottom: '1.5rem', textAlign: 'center' }}>
         <h1 style={{ fontSize: '2rem', margin: '0 0 0.5rem 0', fontWeight: '800' }}>{greeting}</h1>
         <p style={{ fontSize: '1.1rem', color: isDarkMode ? '#94a3b8' : '#64748b', margin: 0, fontWeight: '500' }}>
           {time.toLocaleDateString('en-IN', { weekday: 'long', month: 'long', day: 'numeric' })} • {time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
         </p>
       </div>
 
+      {/* 🔴 NEW: ADVANCED VIBE BANNER CONTAINER */}
+      {vibe && (
+        <div style={{
+          border: vibe.border,
+          background: vibe.background,
+          padding: '1rem',
+          borderRadius: '12px',
+          marginBottom: '2rem',
+          transition: 'all 0.3s ease'
+        }}>
+          <h4 style={{ margin: '0 0 4px 0', fontSize: '1rem', fontWeight: '700' }}>{vibe.title}</h4>
+          <p style={{ margin: 0, fontSize: '0.88rem', opacity: 0.85, lineHeight: '1.4' }}>{vibe.desc}</p>
+        </div>
+      )}
+
+      {/* HYDRATION WIDGET */}
       <div style={{ background: cardBg, padding: '1.5rem', borderRadius: '16px', border: `1px solid ${borderColor}`, marginBottom: '2rem' }}>
         <h3 style={{ margin: '0 0 1.2rem 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ fontSize: '1.2rem' }}>💧 Daily Hydration</span>
@@ -250,6 +344,7 @@ const Home = () => {
         </div>
       </div>
 
+      {/* TODAY'S FOCUS WORKSPACE */}
       <div style={{ background: cardBg, padding: '1.5rem', borderRadius: '16px', border: `1px solid ${borderColor}` }}>
         <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.2rem' }}>✅ Today's Focus</h3>
         <form onSubmit={handleAddTask} className="task-form">
