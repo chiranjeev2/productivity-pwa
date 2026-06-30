@@ -27,7 +27,6 @@ export const SyncProvider = ({ children }) => {
   const getQueue = () => JSON.parse(localStorage.getItem('prodpro_sync_queue')) || [];
   const saveQueue = (queue) => localStorage.setItem('prodpro_sync_queue', JSON.stringify(queue));
 
-  // 🔴 FIXED: Added optional tempId parameter to map client IDs to database keys
   const addToQueue = useCallback((action, endpoint, method, payload = null, tempId = null) => {
     const queue = getQueue();
     const newRequest = { id: Date.now().toString(), action, endpoint, method, payload, tempId };
@@ -35,7 +34,6 @@ export const SyncProvider = ({ children }) => {
     saveQueue(queue);
   }, []);
 
-  // 🔴 FIXED: Sequential Replay Engine with Dynamic Identifier Rewriting
   const processSyncQueue = async () => {
     let queue = getQueue();
     if (queue.length === 0) {
@@ -47,13 +45,11 @@ export const SyncProvider = ({ children }) => {
     const token = localStorage.getItem('token');
     if (!token) return;
 
-    // Dictionary tracking runtime ID translations: { tempId: serverId }
     const idMap = {};
 
     while (queue.length > 0) {
-      let req = queue[0]; // Intercept the head element of the transactional queue
+      let req = queue[0];
 
-      // Dynamic URL scanning: Rewrite endpoint string values if they reference a mapped client ID
       let targetEndpoint = req.endpoint;
       Object.keys(idMap).forEach(tempId => {
         if (targetEndpoint.includes(tempId)) {
@@ -76,32 +72,38 @@ export const SyncProvider = ({ children }) => {
         if (response.ok) {
           const resData = await response.json();
 
-          // If operation was an creation event, record the true server key mapping allocation
           if ((req.action === 'ADD_TASK' || req.action === 'ADD_GOAL') && resData && resData._id && req.tempId) {
             idMap[req.tempId] = resData._id;
           }
 
-          // Safely evict processed action block out of hardware arrays
           const currentQueue = JSON.parse(localStorage.getItem('prodpro_sync_queue')) || [];
           const updatedQueue = currentQueue.filter(item => item.id !== req.id);
           saveQueue(updatedQueue);
-          
-          // Re-index remaining array components for subsequent runtime evaluations
           queue = updatedQueue;
-        } else {
-          // Server returned error flag, fallback to offline state safety
+        } 
+        // 🔴 FIXED: Data/Validation Errors (400-499) mean the server IS online.
+        // Evict the bad item instead of locking the application offline forever.
+        else if (response.status >= 400 && response.status < 500) {
+          console.warn(`Evicting invalid outbox item [${req.action}] due to client error status: ${response.status}`);
+          const currentQueue = JSON.parse(localStorage.getItem('prodpro_sync_queue')) || [];
+          const updatedQueue = currentQueue.filter(item => item.id !== req.id);
+          saveQueue(updatedQueue);
+          queue = updatedQueue;
+        } 
+        // Server drops or 500 errors mean we try again later
+        else {
           setNetworkStatus('offline');
           return;
         }
       } catch (error) {
-        console.error("Outbox replay transaction failure:", error);
+        // 🔴 Fetch threw an actual exception (True connection drop or timeout)
+        console.error("Outbox network request failed completely:", error);
         setNetworkStatus('offline');
         return;
       }
     }
 
     setNetworkStatus('live');
-    // Notify application views to fetch clean, server-validated datasets
     window.dispatchEvent(new Event('sync-complete'));
   };
 
