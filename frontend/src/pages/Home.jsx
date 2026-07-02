@@ -27,22 +27,36 @@ const Home = () => {
     setQueueCount(queue.length);
   }, []);
 
+  // ⚡ OPTIMIZED: High-speed asynchronous validation matrix
   const fetchDashboardData = useCallback(async (showLoading = false) => {
     if (!user) return;
-    if (showLoading) setIsLoading(true);
     updateQueueCount();
 
+    // 1. TRUE CACHE-FIRST: Instantly populate state hooks from device snapshots
     const cachedTasks = getSnapshot('tasks') || [];
     const cachedWater = getSnapshot(`water_${todayDateString}`) || 0;
     
+    setTasks(cachedTasks);
+    setWaterGlasses(cachedWater);
+
+    // Only show full page spinner if the device hardware caches are completely empty
+    if (showLoading && cachedTasks.length === 0 && cachedWater === 0) {
+      setIsLoading(true);
+    } else {
+      setIsLoading(false);
+    }
+
     let activeTasks = cachedTasks;
     let activeWater = cachedWater;
 
+    // Automated next-day unmarking logic engine
     const lastOpenedDate = localStorage.getItem('prodpro_last_opened_date');
     if (lastOpenedDate && lastOpenedDate !== todayDateString) {
       activeTasks = cachedTasks.map(task => ({ ...task, completed: false }));
       activeWater = 0;
       
+      setTasks(activeTasks);
+      setWaterGlasses(activeWater);
       saveSnapshot('tasks', activeTasks);
       saveSnapshot(`water_${todayDateString}`, activeWater);
 
@@ -57,9 +71,8 @@ const Home = () => {
     }
     localStorage.setItem('prodpro_last_opened_date', todayDateString);
 
+    // If offline or reconnecting, exit immediately since snapshots are already live on screen
     if (!isLive) {
-      setTasks(activeTasks);
-      setWaterGlasses(activeWater);
       setIsLoading(false);
       return;
     }
@@ -68,19 +81,21 @@ const Home = () => {
       const token = localStorage.getItem('token');
       if (!token) return;
 
-      const taskRes = await fetch(`${API_URL}/tasks`, { headers: { 'Authorization': `Bearer ${token}` } });
+      // 2. PARALLEL OPTIMIZATION: Fire both network requests concurrently over the wire
+      const [taskRes, calRes] = await Promise.all([
+        fetch(`${API_URL}/tasks`, { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch(`${API_URL}/calendar`, { headers: { 'Authorization': `Bearer ${token}` } })
+      ]);
+
       if (taskRes.ok) {
         let fetchedTasks = await taskRes.json();
-        
         if (lastOpenedDate && lastOpenedDate !== todayDateString) {
           fetchedTasks = fetchedTasks.map(t => ({ ...t, completed: false }));
         }
-
         setTasks(fetchedTasks);
         saveSnapshot('tasks', fetchedTasks);
       }
 
-      const calRes = await fetch(`${API_URL}/calendar`, { headers: { 'Authorization': `Bearer ${token}` } });
       if (calRes.ok) {
         const logs = await calRes.json();
         const todayLog = logs.find(log => log.dateString === todayDateString);
@@ -89,9 +104,7 @@ const Home = () => {
         saveSnapshot(`water_${todayDateString}`, waterCount);
       }
     } catch (error) {
-      console.error("Online dashboard fetch failed, running local caches.", error);
-      setTasks(activeTasks);
-      setWaterGlasses(activeWater);
+      console.error("Background data re-validation failed quietly:", error);
     } finally {
       setIsLoading(false);
     }
