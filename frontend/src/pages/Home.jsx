@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useSync } from '../context/SyncContext';
@@ -22,24 +22,58 @@ const Home = () => {
 
   const isLive = networkStatus === 'live';
 
+  // Guards against background polls stomping on in-flight optimistic updates
+  const pendingMutations = useRef(0);
+  // Guards against an older, slower fetch response overwriting a newer one
+  const fetchSeq = useRef(0);
+
   const updateQueueCount = useCallback(() => {
     const queue = JSON.parse(localStorage.getItem('prodpro_sync_queue')) || [];
     setQueueCount(queue.length);
   }, []);
 
-  // ⚡ OPTIMIZED: High-speed asynchronous validation matrix
+  // Sync a specific tasks/water snapshot to the calendar endpoint.
+  // Called directly from mutation handlers, NOT from a state-watching effect,
+  // so background polling can never trigger a spurious sync.
+  const syncToCalendar = useCallback(async (nextTasks, nextWater) => {
+    if (!isLive) {
+      saveSnapshot(`water_${todayDateString}`, nextWater);
+      return;
+    }
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      await fetch(`${API_URL}/calendar/sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          dateString: todayDateString,
+          waterIntake: nextWater,
+          tasksCompleted: nextTasks.filter(t => t.completed).length,
+          totalTasks: nextTasks.length
+        })
+      });
+    } catch (e) {
+      console.error("Sync failure", e);
+    }
+  }, [API_URL, isLive, saveSnapshot, todayDateString]);
+
   const fetchDashboardData = useCallback(async (showLoading = false) => {
     if (!user) return;
     updateQueueCount();
 
-    // 1. TRUE CACHE-FIRST: Instantly populate state hooks from device snapshots
+    const mySeq = ++fetchSeq.current;
+
+    // Cache is only an instant placeholder so the screen isn't blank while
+    // we go get the real (online) data. It never overwrites a fresher fetch.
     const cachedTasks = getSnapshot('tasks') || [];
     const cachedWater = getSnapshot(`water_${todayDateString}`) || 0;
-    
-    setTasks(cachedTasks);
-    setWaterGlasses(cachedWater);
 
-    // Only show full page spinner if the device hardware caches are completely empty
+    if (pendingMutations.current === 0) {
+      setTasks(cachedTasks);
+      setWaterGlasses(cachedWater);
+    }
+
     if (showLoading && cachedTasks.length === 0 && cachedWater === 0) {
       setIsLoading(true);
     } else {
@@ -49,18 +83,23 @@ const Home = () => {
     let activeTasks = cachedTasks;
     let activeWater = cachedWater;
 
-    // Automated next-day unmarking logic engine
+    // New-day reset: only un-toggle tasks that were actually completed.
+    // (Previously this fired TOGGLE_TASK for every task, which flipped
+    // never-completed tasks to "completed" on the server.)
     const lastOpenedDate = localStorage.getItem('prodpro_last_opened_date');
     if (lastOpenedDate && lastOpenedDate !== todayDateString) {
+      const tasksToReset = cachedTasks.filter(t => t.completed);
       activeTasks = cachedTasks.map(task => ({ ...task, completed: false }));
       activeWater = 0;
-      
-      setTasks(activeTasks);
-      setWaterGlasses(activeWater);
+
+      if (pendingMutations.current === 0) {
+        setTasks(activeTasks);
+        setWaterGlasses(activeWater);
+      }
       saveSnapshot('tasks', activeTasks);
       saveSnapshot(`water_${todayDateString}`, activeWater);
 
-      activeTasks.forEach(task => {
+      tasksToReset.forEach(task => {
         if (!isLive) {
           addToQueue('TOGGLE_TASK', `/tasks/${task._id}`, 'PUT');
         } else {
@@ -71,8 +110,14 @@ const Home = () => {
     }
     localStorage.setItem('prodpro_last_opened_date', todayDateString);
 
-    // If offline or reconnecting, exit immediately since snapshots are already live on screen
     if (!isLive) {
+      setIsLoading(false);
+      return;
+    }
+
+    // Don't let a background refresh clobber an add/toggle/delete/water
+    // action that's still being written to the server.
+    if (pendingMutations.current > 0) {
       setIsLoading(false);
       return;
     }
@@ -81,11 +126,14 @@ const Home = () => {
       const token = localStorage.getItem('token');
       if (!token) return;
 
-      // 2. PARALLEL OPTIMIZATION: Fire both network requests concurrently over the wire
       const [taskRes, calRes] = await Promise.all([
         fetch(`${API_URL}/tasks`, { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch(`${API_URL}/calendar`, { headers: { 'Authorization': `Bearer ${token}` } })
       ]);
+
+      // If a newer fetch (or a mutation) started after this one, drop this
+      // response instead of letting it overwrite fresher state.
+      if (mySeq !== fetchSeq.current || pendingMutations.current > 0) return;
 
       if (taskRes.ok) {
         let fetchedTasks = await taskRes.json();
@@ -106,9 +154,16 @@ const Home = () => {
     } catch (error) {
       console.error("Background data re-validation failed quietly:", error);
     } finally {
-      setIsLoading(false);
+      if (mySeq === fetchSeq.current) setIsLoading(false);
     }
   }, [API_URL, user, todayDateString, isLive, getSnapshot, saveSnapshot, addToQueue, updateQueueCount]);
+
+  // Online-first: as soon as we're live, go get real data immediately
+  // rather than waiting on the poll interval.
+  useEffect(() => {
+    if (!user) return;
+    if (isLive) fetchDashboardData(true);
+  }, [isLive, user, fetchDashboardData]);
 
   useEffect(() => {
     if (!user) return;
@@ -131,32 +186,6 @@ const Home = () => {
   }, [user, fetchDashboardData, isLive, updateQueueCount]);
 
   useEffect(() => {
-    if (isLoading) return;
-
-    const syncToCalendar = async () => {
-      if (!isLive) {
-        saveSnapshot(`water_${todayDateString}`, waterGlasses);
-        return;
-      }
-      try {
-        const token = localStorage.getItem('token');
-        if (!token) return;
-        await fetch(`${API_URL}/calendar/sync`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body: JSON.stringify({
-            dateString: todayDateString,
-            waterIntake: waterGlasses,
-            tasksCompleted: tasks.filter(t => t.completed).length,
-            totalTasks: tasks.length
-          })
-        });
-      } catch (e) { console.error("Sync failure", e); }
-    };
-    syncToCalendar();
-  }, [waterGlasses, tasks, isLoading, API_URL, todayDateString, isLive, saveSnapshot]);
-
-  useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
@@ -168,15 +197,18 @@ const Home = () => {
     const tempId = Date.now().toString();
     const temporaryTask = { _id: tempId, text: newTaskText, completed: false };
     const updatedTasks = [temporaryTask, ...tasks];
-    
+
+    pendingMutations.current++;
     setTasks(updatedTasks);
     saveSnapshot('tasks', updatedTasks);
+    syncToCalendar(updatedTasks, waterGlasses);
     const textToSubmit = newTaskText;
     setNewTaskText('');
 
     if (!isLive) {
       addToQueue('ADD_TASK', '/tasks', 'POST', { text: textToSubmit }, tempId);
       updateQueueCount();
+      pendingMutations.current--;
       return;
     }
 
@@ -196,18 +228,28 @@ const Home = () => {
         });
       }
     } catch (error) {
-      setTasks(prev => prev.filter(t => t._id !== tempId));
+      setTasks(prev => {
+        const reverted = prev.filter(t => t._id !== tempId);
+        saveSnapshot('tasks', reverted);
+        return reverted;
+      });
+    } finally {
+      pendingMutations.current--;
     }
   };
 
   const handleToggleTask = async (taskId) => {
     const updatedTasks = tasks.map(t => t._id === taskId ? { ...t, completed: !t.completed } : t);
+
+    pendingMutations.current++;
     setTasks(updatedTasks);
     saveSnapshot('tasks', updatedTasks);
+    syncToCalendar(updatedTasks, waterGlasses);
 
     if (!isLive) {
       addToQueue('TOGGLE_TASK', `/tasks/${taskId}`, 'PUT');
       updateQueueCount();
+      pendingMutations.current--;
       return;
     }
 
@@ -216,18 +258,25 @@ const Home = () => {
       await fetch(`${API_URL}/tasks/${taskId}`, { method: 'PUT', headers: { 'Authorization': `Bearer ${token}` } });
     } catch (error) {
       setTasks(tasks);
+      saveSnapshot('tasks', tasks);
+    } finally {
+      pendingMutations.current--;
     }
   };
 
   const handleDeleteTask = async (taskId) => {
     const backupTasks = [...tasks];
     const filteredTasks = tasks.filter(t => t._id !== taskId);
+
+    pendingMutations.current++;
     setTasks(filteredTasks);
     saveSnapshot('tasks', filteredTasks);
+    syncToCalendar(filteredTasks, waterGlasses);
 
     if (!isLive) {
       addToQueue('DELETE_TASK', `/tasks/${taskId}`, 'DELETE');
       updateQueueCount();
+      pendingMutations.current--;
       return;
     }
 
@@ -236,12 +285,18 @@ const Home = () => {
       await fetch(`${API_URL}/tasks/${taskId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
     } catch (error) {
       setTasks(backupTasks);
+      saveSnapshot('tasks', backupTasks);
+    } finally {
+      pendingMutations.current--;
     }
   };
 
   const handleWaterClick = (count) => {
+    pendingMutations.current++;
     setWaterGlasses(count);
     saveSnapshot(`water_${todayDateString}`, count);
+    syncToCalendar(tasks, count);
+
     if (!isLive) {
       addToQueue('SYNC_WATER', '/calendar/sync', 'POST', {
         dateString: todayDateString,
@@ -251,6 +306,7 @@ const Home = () => {
       });
       updateQueueCount();
     }
+    pendingMutations.current--;
   };
 
   const getVibeStatusCard = () => {
@@ -274,7 +330,7 @@ const Home = () => {
           border: '1px solid #ef4444',
           background: isDarkMode ? 'rgba(239, 68, 68, 0.1)' : '#fef2f2',
           title: queueCount > 0 ? `📦 Staging Changes (${queueCount} Queued)` : '💾 Operating Offline',
-          desc: queueCount > 0 
+          desc: queueCount > 0
             ? 'Modifications are running on localized state snapshots and will auto-sync on reconnect.'
             : 'Serving high-speed local data instances. Network polling is cleanly paused.'
         };
@@ -337,7 +393,7 @@ const Home = () => {
       <div style={{ background: cardBg, padding: '1.5rem', borderRadius: '16px', border: `1px solid ${borderColor}` }}>
         <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.2rem' }}>✅ Today's Focus</h3>
         <form onSubmit={handleAddTask} className="task-form">
-          <input 
+          <input
             type="text"
             className="task-input"
             placeholder="Add a new task..."
