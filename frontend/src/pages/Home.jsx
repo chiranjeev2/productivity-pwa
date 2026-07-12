@@ -12,7 +12,12 @@ const Home = () => {
 
   const [time, setTime] = useState(new Date());
   const DAILY_GOAL = 8;
-  const todayDateString = new Date().toISOString().split('T')[0];
+
+  // ⏰ FIXED: Dynamic Local Timezone Generator (Enforces strict execution resets right at 00:00 local time)
+  const getLocalDateString = () => {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  };
 
   const [waterGlasses, setWaterGlasses] = useState(0);
   const [tasks, setTasks] = useState([]);
@@ -21,10 +26,7 @@ const Home = () => {
   const [queueCount, setQueueCount] = useState(0);
 
   const isLive = networkStatus === 'live';
-
-  // Guards against background polls stomping on in-flight optimistic updates
   const pendingMutations = useRef(0);
-  // Guards against an older, slower fetch response overwriting a newer one
   const fetchSeq = useRef(0);
 
   const updateQueueCount = useCallback(() => {
@@ -32,10 +34,8 @@ const Home = () => {
     setQueueCount(queue.length);
   }, []);
 
-  // Sync a specific tasks/water snapshot to the calendar endpoint.
-  // Called directly from mutation handlers, NOT from a state-watching effect,
-  // so background polling can never trigger a spurious sync.
   const syncToCalendar = useCallback(async (nextTasks, nextWater) => {
+    const todayDateString = getLocalDateString();
     if (!isLive) {
       saveSnapshot(`water_${todayDateString}`, nextWater);
       return;
@@ -56,38 +56,26 @@ const Home = () => {
     } catch (e) {
       console.error("Sync failure", e);
     }
-  }, [API_URL, isLive, saveSnapshot, todayDateString]);
+  }, [API_URL, isLive, saveSnapshot]);
 
   const fetchDashboardData = useCallback(async (showLoading = false) => {
     if (!user) return;
     updateQueueCount();
 
     const mySeq = ++fetchSeq.current;
+    const todayDateString = getLocalDateString();
 
-    // Cache is only an instant placeholder so the screen isn't blank while
-    // we go get the real (online) data. It never overwrites a fresher fetch.
     const cachedTasks = getSnapshot('tasks') || [];
     const cachedWater = getSnapshot(`water_${todayDateString}`) || 0;
 
-    if (pendingMutations.current === 0) {
-      setTasks(cachedTasks);
-      setWaterGlasses(cachedWater);
-    }
-
-    if (showLoading && cachedTasks.length === 0 && cachedWater === 0) {
-      setIsLoading(true);
-    } else {
-      setIsLoading(false);
-    }
+    // 🔴 FIXED: Capture date condition into an immutable execution block flag
+    const lastOpenedDate = localStorage.getItem('prodpro_last_opened_date');
+    const isNewDay = lastOpenedDate && lastOpenedDate !== todayDateString;
 
     let activeTasks = cachedTasks;
     let activeWater = cachedWater;
 
-    // New-day reset: only un-toggle tasks that were actually completed.
-    // (Previously this fired TOGGLE_TASK for every task, which flipped
-    // never-completed tasks to "completed" on the server.)
-    const lastOpenedDate = localStorage.getItem('prodpro_last_opened_date');
-    if (lastOpenedDate && lastOpenedDate !== todayDateString) {
+    if (isNewDay) {
       const tasksToReset = cachedTasks.filter(t => t.completed);
       activeTasks = cachedTasks.map(task => ({ ...task, completed: false }));
       activeWater = 0;
@@ -108,16 +96,22 @@ const Home = () => {
         }
       });
     }
+
+    // 🔴 FIXED: Move this sequence tracking allocation BELOW evaluation scopes
     localStorage.setItem('prodpro_last_opened_date', todayDateString);
 
-    if (!isLive) {
-      setIsLoading(false);
-      return;
+    if (pendingMutations.current === 0 && !isNewDay) {
+      setTasks(cachedTasks);
+      setWaterGlasses(cachedWater);
     }
 
-    // Don't let a background refresh clobber an add/toggle/delete/water
-    // action that's still being written to the server.
-    if (pendingMutations.current > 0) {
+    if (showLoading && activeTasks.length === 0 && activeWater === 0) {
+      setIsLoading(true);
+    } else {
+      setIsLoading(false);
+    }
+
+    if (!isLive || pendingMutations.current > 0) {
       setIsLoading(false);
       return;
     }
@@ -131,13 +125,12 @@ const Home = () => {
         fetch(`${API_URL}/calendar`, { headers: { 'Authorization': `Bearer ${token}` } })
       ]);
 
-      // If a newer fetch (or a mutation) started after this one, drop this
-      // response instead of letting it overwrite fresher state.
       if (mySeq !== fetchSeq.current || pendingMutations.current > 0) return;
 
       if (taskRes.ok) {
         let fetchedTasks = await taskRes.json();
-        if (lastOpenedDate && lastOpenedDate !== todayDateString) {
+        // 🔴 FIXED: Defensively strip task completion parameters if the client context flagged a local date shift
+        if (isNewDay) {
           fetchedTasks = fetchedTasks.map(t => ({ ...t, completed: false }));
         }
         setTasks(fetchedTasks);
@@ -147,7 +140,10 @@ const Home = () => {
       if (calRes.ok) {
         const logs = await calRes.json();
         const todayLog = logs.find(log => log.dateString === todayDateString);
-        const waterCount = todayLog ? todayLog.waterIntake : 0;
+        let waterCount = todayLog ? todayLog.waterIntake : 0;
+
+        if (isNewDay) waterCount = 0;
+
         setWaterGlasses(waterCount);
         saveSnapshot(`water_${todayDateString}`, waterCount);
       }
@@ -156,10 +152,8 @@ const Home = () => {
     } finally {
       if (mySeq === fetchSeq.current) setIsLoading(false);
     }
-  }, [API_URL, user, todayDateString, isLive, getSnapshot, saveSnapshot, addToQueue, updateQueueCount]);
+  }, [API_URL, user, isLive, getSnapshot, saveSnapshot, addToQueue, updateQueueCount]);
 
-  // Online-first: as soon as we're live, go get real data immediately
-  // rather than waiting on the poll interval.
   useEffect(() => {
     if (!user) return;
     if (isLive) fetchDashboardData(true);
@@ -294,6 +288,7 @@ const Home = () => {
   const handleWaterClick = (count) => {
     pendingMutations.current++;
     setWaterGlasses(count);
+    const todayDateString = getLocalDateString();
     saveSnapshot(`water_${todayDateString}`, count);
     syncToCalendar(tasks, count);
 
