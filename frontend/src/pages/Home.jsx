@@ -12,12 +12,15 @@ const Home = () => {
 
   const [time, setTime] = useState(new Date());
   const DAILY_GOAL = 8;
-
-  // ⏰ FIXED: Dynamic Local Timezone Generator (Enforces strict execution resets right at 00:00 local time)
-  const getLocalDateString = () => {
-    const today = new Date();
-    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-  };
+  
+  // ⏰ TRUE LOCAL MIDNIGHT GENERATOR: Guarantees 00:00 rollover in your exact timezone
+  const getLocalDateString = useCallback(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }, []);
 
   const [waterGlasses, setWaterGlasses] = useState(0);
   const [tasks, setTasks] = useState([]);
@@ -26,92 +29,98 @@ const Home = () => {
   const [queueCount, setQueueCount] = useState(0);
 
   const isLive = networkStatus === 'live';
-  const pendingMutations = useRef(0);
-  const fetchSeq = useRef(0);
+  
+  // 🛡️ THE INTERACTION LOCK: Prevents server echo from overwriting your clicks
+  const lastActionTime = useRef(0);
+  const blockIncomingSync = () => { lastActionTime.current = Date.now(); };
+  const canAcceptIncomingSync = () => (Date.now() - lastActionTime.current) > 10000; // 10 second lock
 
   const updateQueueCount = useCallback(() => {
     const queue = JSON.parse(localStorage.getItem('prodpro_sync_queue')) || [];
     setQueueCount(queue.length);
   }, []);
 
-  const syncToCalendar = useCallback(async (nextTasks, nextWater) => {
+  // 📊 CENTRALIZED CALENDAR PUSHER: Guarantees Calendar stays synced with every action
+  const pushCalendarSummary = async (currentTasks, currentWater) => {
     const todayDateString = getLocalDateString();
+    const payload = {
+      dateString: todayDateString,
+      waterIntake: currentWater,
+      tasksCompleted: currentTasks.filter(t => t.completed).length,
+      totalTasks: currentTasks.length
+    };
+    
     if (!isLive) {
-      saveSnapshot(`water_${todayDateString}`, nextWater);
+      addToQueue('SYNC_WATER', '/calendar/sync', 'POST', payload);
+      updateQueueCount();
       return;
     }
+    
     try {
       const token = localStorage.getItem('token');
       if (!token) return;
       await fetch(`${API_URL}/calendar/sync`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({
-          dateString: todayDateString,
-          waterIntake: nextWater,
-          tasksCompleted: nextTasks.filter(t => t.completed).length,
-          totalTasks: nextTasks.length
-        })
+        body: JSON.stringify(payload)
       });
     } catch (e) {
-      console.error("Sync failure", e);
+      addToQueue('SYNC_WATER', '/calendar/sync', 'POST', payload);
+      updateQueueCount();
     }
-  }, [API_URL, isLive, saveSnapshot]);
+  };
 
-  const fetchDashboardData = useCallback(async (showLoading = false) => {
+  const fetchDashboardData = useCallback(async (isInitialLoad = false) => {
     if (!user) return;
     updateQueueCount();
 
-    const mySeq = ++fetchSeq.current;
     const todayDateString = getLocalDateString();
 
-    const cachedTasks = getSnapshot('tasks') || [];
-    const cachedWater = getSnapshot(`water_${todayDateString}`) || 0;
-
-    // 🔴 FIXED: Capture date condition into an immutable execution block flag
-    const lastOpenedDate = localStorage.getItem('prodpro_last_opened_date');
-    const isNewDay = lastOpenedDate && lastOpenedDate !== todayDateString;
-
-    let activeTasks = cachedTasks;
-    let activeWater = cachedWater;
-
-    if (isNewDay) {
-      const tasksToReset = cachedTasks.filter(t => t.completed);
-      activeTasks = cachedTasks.map(task => ({ ...task, completed: false }));
-      activeWater = 0;
-
-      if (pendingMutations.current === 0) {
-        setTasks(activeTasks);
-        setWaterGlasses(activeWater);
-      }
-      saveSnapshot('tasks', activeTasks);
-      saveSnapshot(`water_${todayDateString}`, activeWater);
-
-      tasksToReset.forEach(task => {
-        if (!isLive) {
-          addToQueue('TOGGLE_TASK', `/tasks/${task._id}`, 'PUT');
-        } else {
-          const token = localStorage.getItem('token');
-          fetch(`${API_URL}/tasks/${task._id}`, { method: 'PUT', headers: { 'Authorization': `Bearer ${token}` } });
-        }
-      });
-    }
-
-    // 🔴 FIXED: Move this sequence tracking allocation BELOW evaluation scopes
-    localStorage.setItem('prodpro_last_opened_date', todayDateString);
-
-    if (pendingMutations.current === 0 && !isNewDay) {
+    // PHASE 1: Instant snapshot load only on first mount (Stops flickering)
+    if (isInitialLoad) {
+      const cachedTasks = getSnapshot('tasks') || [];
+      const cachedWater = getSnapshot(`water_${todayDateString}`) || 0;
       setTasks(cachedTasks);
       setWaterGlasses(cachedWater);
+      if (cachedTasks.length === 0 && cachedWater === 0) setIsLoading(true);
     }
 
-    if (showLoading && activeTasks.length === 0 && activeWater === 0) {
-      setIsLoading(true);
-    } else {
+    // PHASE 2: True Daily Reset Engine
+    const lastOpenedDate = localStorage.getItem('prodpro_last_opened_date');
+    if (lastOpenedDate && lastOpenedDate !== todayDateString) {
+      blockIncomingSync(); // Lock out the server during reset
+      
+      const currentTasks = getSnapshot('tasks') || tasks;
+      const tasksToReset = currentTasks.filter(t => t.completed);
+      
+      const resetTasks = currentTasks.map(t => ({ ...t, completed: false }));
+      
+      setTasks(resetTasks);
+      setWaterGlasses(0);
+      saveSnapshot('tasks', resetTasks);
+      saveSnapshot(`water_${todayDateString}`, 0);
+      localStorage.setItem('prodpro_last_opened_date', todayDateString);
+
+      // Package resets into the Outbox Queue for safe, guaranteed execution
+      tasksToReset.forEach(task => {
+        addToQueue('TOGGLE_TASK', `/tasks/${task._id}`, 'PUT');
+      });
+      
+      await pushCalendarSummary(resetTasks, 0);
+      
+      // Kickstart the queue immediately if we are online
+      if (navigator.onLine) window.dispatchEvent(new Event('online'));
+      
       setIsLoading(false);
+      return; // Exit fetch loop to let queue process
     }
 
-    if (!isLive || pendingMutations.current > 0) {
+    if (!lastOpenedDate) {
+      localStorage.setItem('prodpro_last_opened_date', todayDateString);
+    }
+
+    // PHASE 3: Background Validation (Only runs if Interaction Lock is open)
+    if (!isLive || !canAcceptIncomingSync()) {
       setIsLoading(false);
       return;
     }
@@ -125,14 +134,11 @@ const Home = () => {
         fetch(`${API_URL}/calendar`, { headers: { 'Authorization': `Bearer ${token}` } })
       ]);
 
-      if (mySeq !== fetchSeq.current || pendingMutations.current > 0) return;
+      // Double-check lock in case user clicked while fetch was in transit
+      if (!canAcceptIncomingSync()) return;
 
       if (taskRes.ok) {
-        let fetchedTasks = await taskRes.json();
-        // 🔴 FIXED: Defensively strip task completion parameters if the client context flagged a local date shift
-        if (isNewDay) {
-          fetchedTasks = fetchedTasks.map(t => ({ ...t, completed: false }));
-        }
+        const fetchedTasks = await taskRes.json();
         setTasks(fetchedTasks);
         saveSnapshot('tasks', fetchedTasks);
       }
@@ -140,24 +146,16 @@ const Home = () => {
       if (calRes.ok) {
         const logs = await calRes.json();
         const todayLog = logs.find(log => log.dateString === todayDateString);
-        let waterCount = todayLog ? todayLog.waterIntake : 0;
-
-        if (isNewDay) waterCount = 0;
-
+        const waterCount = todayLog ? todayLog.waterIntake : 0;
         setWaterGlasses(waterCount);
         saveSnapshot(`water_${todayDateString}`, waterCount);
       }
     } catch (error) {
-      console.error("Background data re-validation failed quietly:", error);
+      console.error("Background data re-validation failed quietly");
     } finally {
-      if (mySeq === fetchSeq.current) setIsLoading(false);
+      setIsLoading(false);
     }
-  }, [API_URL, user, isLive, getSnapshot, saveSnapshot, addToQueue, updateQueueCount]);
-
-  useEffect(() => {
-    if (!user) return;
-    if (isLive) fetchDashboardData(true);
-  }, [isLive, user, fetchDashboardData]);
+  }, [API_URL, user, isLive, getSnapshot, saveSnapshot, addToQueue, updateQueueCount, getLocalDateString, tasks]);
 
   useEffect(() => {
     if (!user) return;
@@ -188,21 +186,22 @@ const Home = () => {
     e.preventDefault();
     if (!newTaskText.trim()) return;
 
+    blockIncomingSync(); // Engage 10-second lock
+
     const tempId = Date.now().toString();
     const temporaryTask = { _id: tempId, text: newTaskText, completed: false };
     const updatedTasks = [temporaryTask, ...tasks];
 
-    pendingMutations.current++;
     setTasks(updatedTasks);
     saveSnapshot('tasks', updatedTasks);
-    syncToCalendar(updatedTasks, waterGlasses);
+    pushCalendarSummary(updatedTasks, waterGlasses); // Update calendar stats
+    
     const textToSubmit = newTaskText;
     setNewTaskText('');
 
     if (!isLive) {
       addToQueue('ADD_TASK', '/tasks', 'POST', { text: textToSubmit }, tempId);
       updateQueueCount();
-      pendingMutations.current--;
       return;
     }
 
@@ -222,28 +221,22 @@ const Home = () => {
         });
       }
     } catch (error) {
-      setTasks(prev => {
-        const reverted = prev.filter(t => t._id !== tempId);
-        saveSnapshot('tasks', reverted);
-        return reverted;
-      });
-    } finally {
-      pendingMutations.current--;
+      addToQueue('ADD_TASK', '/tasks', 'POST', { text: textToSubmit }, tempId);
+      updateQueueCount();
     }
   };
 
   const handleToggleTask = async (taskId) => {
-    const updatedTasks = tasks.map(t => t._id === taskId ? { ...t, completed: !t.completed } : t);
+    blockIncomingSync(); // Engage 10-second lock
 
-    pendingMutations.current++;
+    const updatedTasks = tasks.map(t => t._id === taskId ? { ...t, completed: !t.completed } : t);
     setTasks(updatedTasks);
     saveSnapshot('tasks', updatedTasks);
-    syncToCalendar(updatedTasks, waterGlasses);
+    pushCalendarSummary(updatedTasks, waterGlasses); // Update calendar stats
 
     if (!isLive) {
       addToQueue('TOGGLE_TASK', `/tasks/${taskId}`, 'PUT');
       updateQueueCount();
-      pendingMutations.current--;
       return;
     }
 
@@ -251,26 +244,22 @@ const Home = () => {
       const token = localStorage.getItem('token');
       await fetch(`${API_URL}/tasks/${taskId}`, { method: 'PUT', headers: { 'Authorization': `Bearer ${token}` } });
     } catch (error) {
-      setTasks(tasks);
-      saveSnapshot('tasks', tasks);
-    } finally {
-      pendingMutations.current--;
+      addToQueue('TOGGLE_TASK', `/tasks/${taskId}`, 'PUT');
+      updateQueueCount();
     }
   };
 
   const handleDeleteTask = async (taskId) => {
-    const backupTasks = [...tasks];
-    const filteredTasks = tasks.filter(t => t._id !== taskId);
+    blockIncomingSync(); // Engage 10-second lock
 
-    pendingMutations.current++;
+    const filteredTasks = tasks.filter(t => t._id !== taskId);
     setTasks(filteredTasks);
     saveSnapshot('tasks', filteredTasks);
-    syncToCalendar(filteredTasks, waterGlasses);
+    pushCalendarSummary(filteredTasks, waterGlasses); // Update calendar stats
 
     if (!isLive) {
       addToQueue('DELETE_TASK', `/tasks/${taskId}`, 'DELETE');
       updateQueueCount();
-      pendingMutations.current--;
       return;
     }
 
@@ -278,30 +267,18 @@ const Home = () => {
       const token = localStorage.getItem('token');
       await fetch(`${API_URL}/tasks/${taskId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
     } catch (error) {
-      setTasks(backupTasks);
-      saveSnapshot('tasks', backupTasks);
-    } finally {
-      pendingMutations.current--;
+      addToQueue('DELETE_TASK', `/tasks/${taskId}`, 'DELETE');
+      updateQueueCount();
     }
   };
 
   const handleWaterClick = (count) => {
-    pendingMutations.current++;
-    setWaterGlasses(count);
-    const todayDateString = getLocalDateString();
-    saveSnapshot(`water_${todayDateString}`, count);
-    syncToCalendar(tasks, count);
+    blockIncomingSync(); // Engage 10-second lock
 
-    if (!isLive) {
-      addToQueue('SYNC_WATER', '/calendar/sync', 'POST', {
-        dateString: todayDateString,
-        waterIntake: count,
-        tasksCompleted: tasks.filter(t => t.completed).length,
-        totalTasks: tasks.length
-      });
-      updateQueueCount();
-    }
-    pendingMutations.current--;
+    setWaterGlasses(count);
+    saveSnapshot(`water_${getLocalDateString()}`, count);
+    pushCalendarSummary(tasks, count); // Updates Calendar DB instantly
+    updateQueueCount();
   };
 
   const getVibeStatusCard = () => {
