@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useSync } from '../context/SyncContext';
@@ -6,190 +6,93 @@ import { useSync } from '../context/SyncContext';
 const Calendar = () => {
   const { isDarkMode } = useTheme();
   const { user } = useAuth();
-  const { isOffline, saveSnapshot, getSnapshot } = useSync();
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
-
+  const { networkStatus, getSnapshot, saveSnapshot } = useSync();
   const [logs, setLogs] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [currentDate, setCurrentDate] = useState(new Date());
-
-  const today = new Date();
-  const currentYear = currentDate.getFullYear();
-  const currentMonth = currentDate.getMonth(); 
   
-  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-  const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-  const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay(); 
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
+  const isLive = networkStatus === 'live';
 
-  const fetchCalendarLogs = useCallback(async (showLoading = false) => {
-    if (!user) return;
-    if (showLoading) setIsLoading(true);
+  const fetchCalendarData = async () => {
+    // 1. Instantly load from snapshot cache
+    const cached = getSnapshot('calendar_logs');
+    if (cached) setLogs(cached);
 
-    const cachedLogs = getSnapshot('calendar_logs');
-    if (cachedLogs && Array.isArray(cachedLogs)) {
-      setLogs(cachedLogs);
-    }
-
-    if (isOffline) {
+    if (!isLive) {
       setIsLoading(false);
       return;
     }
 
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`${API_URL}/calendar`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        if (Array.isArray(data)) {
-          setLogs(data);
-          saveSnapshot('calendar_logs', data);
-        }
+      if (!token) return;
+      const res = await fetch(`${API_URL}/calendar`, { headers: { 'Authorization': `Bearer ${token}` }});
+      if (res.ok) {
+        const data = await res.json();
+        setLogs(data);
+        saveSnapshot('calendar_logs', data);
       }
-    } catch (error) {
-      console.error("Failed to fetch calendar data online:", error);
+    } catch(e) {
+      console.error("Calendar fetch failed", e);
     } finally {
       setIsLoading(false);
     }
-  }, [API_URL, user, isOffline, getSnapshot, saveSnapshot]);
+  };
 
+  // 🔴 FIXED: Severed the Infinite Loop by isolating the dependency arrays
   useEffect(() => {
-    if (!user) return;
-    fetchCalendarLogs(true);
-
-    const interval = setInterval(() => {
-      if (!isOffline) fetchCalendarLogs(false);
-    }, 5000);
-
-    const handleFocusSync = () => { if (!isOffline) fetchCalendarLogs(false); };
-    window.addEventListener('focus', handleFocusSync);
-    window.addEventListener('sync-complete', handleFocusSync);
-
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener('focus', handleFocusSync);
-      window.removeEventListener('sync-complete', handleFocusSync);
-    };
-  }, [user, fetchCalendarLogs, isOffline]);
-
-  const handlePrevMonth = () => setCurrentDate(new Date(currentYear, currentMonth - 1, 1));
-  const handleNextMonth = () => setCurrentDate(new Date(currentYear, currentMonth + 1, 1));
-
-  // 🔴 FIXED: Dynamic Client-Side Status Engine for Real-Time Offline Colors
-  const getLogForDay = (day) => {
-    const formattedMonth = String(currentMonth + 1).padStart(2, '0');
-    const formattedDay = String(day).padStart(2, '0');
-    const dateString = `${currentYear}-${formattedMonth}-${formattedDay}`;
-    
-    const todayObj = new Date();
-    const todayString = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
-    
-    // Find base server log entry if it exists
-    let log = Array.isArray(logs) ? logs.find(l => l.dateString === dateString) : undefined;
-    
-    // Intercept today's block to compute status instantly from offline hardware snapshots
-    if (dateString === todayString) {
-      const localTasks = getSnapshot('tasks') || [];
-      const localWater = getSnapshot(`water_${todayString}`) || 0;
-      
-      const totalTasks = localTasks.length;
-      const tasksCompleted = localTasks.filter(t => t.completed).length;
-      
-      let computedStatus = 'missed'; // Default baseline state
-      const waterGoalMet = localWater >= 8;
-      const tasksGoalMet = totalTasks > 0 ? tasksCompleted === totalTasks : true;
-      
-      if (localWater > 0 || tasksCompleted > 0) {
-        if (waterGoalMet && tasksGoalMet) {
-          computedStatus = 'perfect'; // Everything completed perfectly
-        } else {
-          computedStatus = 'good'; // Progress made, partial completion
-        }
-      }
-
-      return {
-        ...log,
-        dateString,
-        waterIntake: localWater,
-        tasksCompleted,
-        totalTasks,
-        status: computedStatus
-      };
-    }
-    
-    return log;
-  };
-
-  const getSquareColor = (status) => {
-    switch (status) {
-      case 'perfect': return '#10b981'; 
-      case 'good': return '#3b82f6';    
-      case 'missed': return '#ef4444';  
-      default: return isDarkMode ? '#334155' : '#e2e8f0'; 
-    }
-  };
+    if (user) fetchCalendarData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
   const textColor = isDarkMode ? '#f8fafc' : '#0f172a';
-  const mutedText = isDarkMode ? '#94a3b8' : '#64748b';
   const cardBg = isDarkMode ? '#1e293b' : '#ffffff';
+  const borderColor = isDarkMode ? '#334155' : '#e2e8f0';
+
+  // Sort logs by newest date first
+  const sortedLogs = [...logs].sort((a, b) => new Date(b.dateString) - new Date(a.dateString));
 
   return (
     <div style={{ color: textColor, maxWidth: '600px', margin: '0 auto', paddingBottom: '100px' }}>
       <div style={{ marginBottom: '2rem', textAlign: 'center' }}>
-        <h1 style={{ fontSize: '2rem', margin: '0 0 0.5rem 0', fontWeight: '800' }}>📊 Consistency Tracker</h1>
-        <p style={{ fontSize: '1.1rem', color: mutedText, margin: 0, fontWeight: '500' }}>Build the chain, day by day.</p>
+        <h1 style={{ fontSize: '2rem', margin: '0 0 0.5rem 0', fontWeight: '800' }}>📅 Calendar History</h1>
+        <p style={{ fontSize: '1.1rem', color: isDarkMode ? '#94a3b8' : '#64748b', margin: 0 }}>Review your daily progress.</p>
       </div>
 
-      <div style={{ background: cardBg, padding: '1.5rem', borderRadius: '16px', border: `1px solid ${isDarkMode ? '#334155' : '#e2e8f0'}` }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-          <button onClick={handlePrevMonth} style={{ background: 'transparent', border: 'none', color: textColor, fontSize: '1.5rem', cursor: 'pointer' }}>&#8592;</button>
-          <h2 style={{ margin: 0, fontSize: '1.3rem' }}>{monthNames[currentMonth]} {currentYear}</h2>
-          <button onClick={handleNextMonth} style={{ background: 'transparent', border: 'none', color: textColor, fontSize: '1.5rem', cursor: 'pointer' }}>&#8594;</button>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px', marginBottom: '1rem', textAlign: 'center', fontWeight: 'bold', color: mutedText }}>
-          <div>Su</div><div>Mo</div><div>Tu</div><div>We</div><div>Th</div><div>Fr</div><div>Sa</div>
-        </div>
-
-        {isLoading && logs.length === 0 ? (
-          <p style={{ textAlign: 'center', color: mutedText, padding: '2rem 0' }}>Loading your history...</p>
-        ) : (
-          <div style={{ gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px', display: 'grid' }}>
-            {[...Array(firstDayOfMonth)].map((_, i) => (
-              <div key={`empty-${i}`} style={{ aspectRatio: '1', borderRadius: '8px', background: 'transparent' }}></div>
-            ))}
-
-            {[...Array(daysInMonth)].map((_, i) => {
-              const day = i + 1;
-              const log = getLogForDay(day);
-              const isToday = day === today.getDate() && currentMonth === today.getMonth() && currentYear === today.getFullYear();
-              
-              return (
-                <div 
-                  key={day} 
-                  style={{ 
-                    aspectRatio: '1', borderRadius: '8px', background: getSquareColor(log?.status),
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold',
-                    color: log?.status && log.status !== 'empty' ? '#fff' : mutedText,
-                    border: isToday ? '2px solid #3b82f6' : 'none',
-                    boxShadow: isToday ? '0 0 10px rgba(59, 130, 246, 0.4)' : 'none',
-                    transition: 'all 0.3s ease'
-                  }}
-                >
-                  {day}
+      {isLoading && logs.length === 0 ? (
+        <p style={{ textAlign: 'center', color: isDarkMode ? '#94a3b8' : '#64748b' }}>Loading history...</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          {sortedLogs.length === 0 && (
+            <p style={{ fontStyle: 'italic', color: isDarkMode ? '#94a3b8' : '#64748b', textAlign: 'center' }}>No history logged yet.</p>
+          )}
+          {sortedLogs.map((log) => {
+            const dateObj = new Date(log.dateString);
+            const displayDate = dateObj.toLocaleDateString('en-IN', { weekday: 'long', month: 'short', day: 'numeric' });
+            
+            return (
+              <div key={log.dateString} style={{ background: cardBg, padding: '1.5rem', borderRadius: '16px', border: `1px solid ${borderColor}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                
+                <div>
+                  <h4 style={{ margin: '0 0 8px 0', fontSize: '1.1rem' }}>{displayDate}</h4>
+                  <div style={{ display: 'flex', gap: '15px', fontSize: '0.9rem', color: isDarkMode ? '#cbd5e1' : '#475569' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      💧 {log.waterIntake} / 8 Glasses
+                    </span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      ✅ {log.tasksCompleted} / {log.totalTasks} Tasks
+                    </span>
+                  </div>
                 </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
 
-      <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', marginTop: '2rem', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: '16px', height: '16px', borderRadius: '4px', background: '#10b981' }}></div><span style={{ fontSize: '0.9rem', color: mutedText }}>Perfect</span></div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: '16px', height: '16px', borderRadius: '4px', background: '#3b82f6' }}></div><span style={{ fontSize: '0.9rem', color: mutedText }}>Good</span></div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: '16px', height: '16px', borderRadius: '4px', background: '#ef4444' }}></div><span style={{ fontSize: '0.9rem', color: mutedText }}>Missed</span></div>
-      </div>
+                <div style={{ background: log.waterIntake >= 8 ? '#10b981' : (isDarkMode ? '#334155' : '#e2e8f0'), color: log.waterIntake >= 8 ? '#fff' : textColor, padding: '8px 12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.9rem' }}>
+                  {log.waterIntake >= 8 ? 'Goal Met' : 'Missed'}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   );
 };

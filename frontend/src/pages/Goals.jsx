@@ -35,6 +35,7 @@ const Goals = () => {
 
     try {
       const token = localStorage.getItem('token');
+      if (!token) return;
       const response = await fetch(`${API_URL}/goals`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -46,15 +47,21 @@ const Goals = () => {
         }
       }
     } catch (error) {
-      console.error("Failed to fetch goals online:", error);
+      console.error("Failed to fetch goals quietly");
     } finally {
       setIsLoading(false);
     }
   }, [API_URL, user, isOffline, getSnapshot, saveSnapshot]);
 
+  // 🔴 FIXED: Severed the Infinite Loop by isolating the dependency array
+  useEffect(() => {
+    if (user) fetchGoals(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  // 🔴 FIXED: Background polling is strictly isolated to prevent re-render loops
   useEffect(() => {
     if (!user) return;
-    fetchGoals(true);
 
     const interval = setInterval(() => {
       if (!isOffline) fetchGoals(false);
@@ -69,7 +76,8 @@ const Goals = () => {
       window.removeEventListener('focus', handleFocusSync);
       window.removeEventListener('sync-complete', handleFocusSync);
     };
-  }, [user, fetchGoals, isOffline]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, isOffline]);
 
   const handleAddGoal = async (e) => {
     e.preventDefault();
@@ -90,7 +98,6 @@ const Goals = () => {
     setGoals(updatedGoals);
     saveSnapshot('goals', updatedGoals);
 
-    // Capture values explicitly before resetting input states
     const titleToSubmit = newTitle;
     const typeToSubmit = newType;
     setNewTitle('');
