@@ -43,11 +43,15 @@ exports.processBatchSync = async (req, res, next) => {
 
     // Tell the user's other active devices to refresh their data
     if (results.successful > 0) {
-      req.io.to(userId.toString()).emit('sync-event', {
-        type: 'BATCH_SYNC_COMPLETE',
-        payload: { timestamp: Date.now() }
-      });
+      const io = req.app.get('io');
+      if (io) {
+        io.to(userId.toString()).emit('sync-event', {
+          type: 'BATCH_SYNC_COMPLETE',
+          payload: { timestamp: Date.now() }
+        });
+      }
     }
+
 
     res.status(200).json({ message: 'Batch processed', results });
   } catch (error) {

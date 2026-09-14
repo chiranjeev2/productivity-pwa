@@ -1,37 +1,46 @@
 // frontend/public/sw.js
-import { precacheAndRoute } from 'workbox-precaching';
-import Dexie from 'dexie';
+// NOTE: This file is served as-is (not bundled by Vite), so import.meta.env
+// is NOT available here. We derive the backend origin from the SW's own location
+// so it works on both localhost and in production on Render without hardcoding.
 
-// 1. Precache the App Shell (Vite handles injecting the manifest)
-precacheAndRoute(self.__WB_MANIFEST || []);
+importScripts('https://cdn.jsdelivr.net/npm/dexie@3/dist/dexie.min.js');
 
-// 2. Initialize DB access inside the worker
+// Derive the API base from the Service Worker's registration scope
+// e.g. https://productivity-pwa-chiranjeev2s-projects.vercel.app -> same origin
+// The backend URL is stored in IndexedDB by the app on login.
 const db = new Dexie('ProductivityProDB');
 db.version(2).stores({
   syncQueue: '++id, action, entity, clientGuid, payload, timestamp',
   auth: 'id, token'
 });
 
-// 3. Listen for the Background Sync Event
+// Listen for the Background Sync event (fired by the browser when back online)
 self.addEventListener('sync', (event) => {
   if (event.tag === 'sync-data') {
-    console.log('🔄 Background Sync triggered by browser');
+    console.log('[SW] 🔄 Background Sync triggered by browser');
     event.waitUntil(processSyncQueue());
   }
 });
 
 async function processSyncQueue() {
   try {
-    // Grab all queued items, sorted by oldest first
+    // Grab all queued items, sorted oldest first
     const queue = await db.syncQueue.orderBy('timestamp').toArray();
     if (queue.length === 0) return;
 
-    // Grab the auth token
+    // Grab the auth token stored by the app at login
     const authRecord = await db.auth.get('current');
-    if (!authRecord || !authRecord.token) throw new Error('No auth token available for background sync');
+    if (!authRecord || !authRecord.token) {
+      console.warn('[SW] No auth token found — skipping batch sync, will retry next time.');
+      return;
+    }
 
-    // Send the entire queue as a batch to the backend
-    const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/v1/sync/batch`, {
+    // The backend URL is stored in the auth record by the app so the SW
+    // doesn't need import.meta.env (which is unavailable in public/ SW files).
+    const backendUrl = authRecord.backendUrl || 'https://prodpro-backend.onrender.com';
+    const batchEndpoint = `${backendUrl}/api/v1/sync/batch`;
+
+    const response = await fetch(batchEndpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -40,16 +49,19 @@ async function processSyncQueue() {
       body: JSON.stringify({ operations: queue })
     });
 
-    if (!response.ok) throw new Error('Backend rejected batch sync');
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`[SW] Backend rejected batch sync: ${response.status} — ${body}`);
+    }
 
-    // If successful, clear the sync queue locally
+    // Success — clear only the items we just sent
     const itemIds = queue.map(item => item.id);
     await db.syncQueue.bulkDelete(itemIds);
-    console.log(`✅ Successfully synced ${queue.length} background operations`);
+    console.log(`[SW] ✅ Successfully synced ${queue.length} offline operations`);
 
   } catch (error) {
-    console.error('❌ Background sync failed, will retry next time:', error);
-    // Throwing an error tells the browser's SyncManager to try again later
-    throw error; 
+    console.error('[SW] ❌ Background sync failed, will retry next time:', error);
+    // Re-throwing tells the browser SyncManager to retry with backoff
+    throw error;
   }
 }
