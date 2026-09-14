@@ -1,10 +1,20 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
+﻿import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 
 const SyncContext = createContext();
 
+// Reads token from either storage key so old sessions don't cause 401 during replay.
+const getToken = () => {
+  const standalone = localStorage.getItem('token');
+  if (standalone) return standalone;
+  try {
+    const user = JSON.parse(localStorage.getItem('user'));
+    return user?.token || null;
+  } catch { return null; }
+};
+
 export const SyncProvider = ({ children }) => {
   const [networkStatus, setNetworkStatus] = useState(navigator.onLine ? 'live' : 'offline');
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
+  const API_URL = import.meta.env.VITE_API_URL || 'https://prodpro-backend.onrender.com/api/v1';
 
   // Prevents two overlapping runs of processSyncQueue (e.g. triggered by
   // both the mount effect and the 'online' event firing close together),
@@ -40,9 +50,9 @@ export const SyncProvider = ({ children }) => {
       }
 
       setNetworkStatus('reconnecting');
-      const token = localStorage.getItem('token');
+      const token = getToken();
       if (!token) {
-        // Don't get stuck in 'reconnecting' forever — reflect actual
+        // Don't get stuck in 'reconnecting' forever â€” reflect actual
         // connectivity and let a future trigger (login, next 'online'
         // event, next poll) retry the queue.
         setNetworkStatus(navigator.onLine ? 'live' : 'offline');

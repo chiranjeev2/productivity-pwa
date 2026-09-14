@@ -1,7 +1,17 @@
-import React, { useState, useEffect, useCallback } from 'react';
+﻿import React, { useState, useEffect, useCallback } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useSync } from '../context/SyncContext';
+
+// Reads token from either storage key so old sessions don't cause 401.
+const getToken = () => {
+  const standalone = localStorage.getItem('token');
+  if (standalone) return standalone;
+  try {
+    const user = JSON.parse(localStorage.getItem('user'));
+    return user?.token || null;
+  } catch { return null; }
+};
 
 const Calendar = () => {
   const { isDarkMode } = useTheme();
@@ -11,7 +21,8 @@ const Calendar = () => {
   const [logs, setLogs] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
+  const API_URL = import.meta.env.VITE_API_URL || 'https://prodpro-backend.onrender.com/api/v1';
+
   const isLive = networkStatus === 'live';
 
   const fetchCalendarData = useCallback(async (showLoading = false) => {
@@ -28,7 +39,7 @@ const Calendar = () => {
     }
 
     try {
-      const token = localStorage.getItem('token');
+      const token = getToken();
       if (!token) return;
       const res = await fetch(`${API_URL}/calendar`, { headers: { 'Authorization': `Bearer ${token}` }});
       if (res.ok) {
@@ -43,13 +54,13 @@ const Calendar = () => {
     }
   }, [API_URL, user, isLive, getSnapshot, saveSnapshot]);
 
-  // 🔴 LOOP-FREE ISOLATION: Fetches only on mount or user state change
+  // ðŸ”´ LOOP-FREE ISOLATION: Fetches only on mount or user state change
   useEffect(() => {
     if (user) fetchCalendarData(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
-  // 🔴 BACKGROUND POLL: Safely polls every 5s without causing render crashes
+  // ðŸ”´ BACKGROUND POLL: Safely polls every 5s without causing render crashes
   useEffect(() => {
     if (!user) return;
     const interval = setInterval(() => {
@@ -81,7 +92,7 @@ const Calendar = () => {
   return (
     <div style={{ color: textColor, maxWidth: '600px', margin: '0 auto', paddingBottom: '100px' }}>
       <div style={{ marginBottom: '2rem', textAlign: 'center' }}>
-        <h1 style={{ fontSize: '2rem', margin: '0 0 0.5rem 0', fontWeight: '800' }}>📅 Calendar</h1>
+        <h1 style={{ fontSize: '2rem', margin: '0 0 0.5rem 0', fontWeight: '800' }}>ðŸ“… Calendar</h1>
         <p style={{ fontSize: '1.1rem', color: isDarkMode ? '#94a3b8' : '#64748b', margin: 0 }}>{monthName}</p>
       </div>
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useSync } from '../context/SyncContext';
@@ -12,11 +12,23 @@ const getLocalDateString = () => {
   return `${year}-${month}-${day}`;
 };
 
+// Reads token from either the standalone 'token' key (new sessions) or
+// the embedded user object (old sessions), so both work without re-login.
+const getToken = () => {
+  const standalone = localStorage.getItem('token');
+  if (standalone) return standalone;
+  try {
+    const user = JSON.parse(localStorage.getItem('user'));
+    return user?.token || null;
+  } catch { return null; }
+};
+
 const Home = () => {
   const { isDarkMode } = useTheme();
   const { user } = useAuth();
   const { networkStatus, addToQueue, saveSnapshot, getSnapshot } = useSync();
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
+  const API_URL = import.meta.env.VITE_API_URL || 'https://prodpro-backend.onrender.com/api/v1';
+
 
   const [time, setTime] = useState(new Date());
   const DAILY_GOAL = 8;
@@ -54,7 +66,7 @@ const Home = () => {
     }
     
     try {
-      const token = localStorage.getItem('token');
+      const token = getToken();
       if (!token) return;
       await fetch(`${API_URL}/calendar/sync`, {
         method: 'POST',
@@ -108,7 +120,7 @@ const Home = () => {
         if (!isLive) {
           addToQueue('TOGGLE_TASK', `/tasks/${task._id}`, 'PUT');
         } else {
-          const token = localStorage.getItem('token');
+          const token = getToken();
           fetch(`${API_URL}/tasks/${task._id}`, { method: 'PUT', headers: { 'Authorization': `Bearer ${token}` } });
         }
       });
@@ -123,7 +135,7 @@ const Home = () => {
     }
 
     try {
-      const token = localStorage.getItem('token');
+      const token = getToken();
       if (!token) return;
 
       const [taskRes, calRes] = await Promise.all([
@@ -156,7 +168,7 @@ const Home = () => {
     }
   }, [API_URL, user, isLive, getSnapshot, saveSnapshot, addToQueue, updateQueueCount, syncToCalendar]);
 
-  // 🔴 FIXED: Severed the Infinite Loop by isolating the dependency arrays
+  // ðŸ”´ FIXED: Severed the Infinite Loop by isolating the dependency arrays
   useEffect(() => {
     if (user) fetchDashboardData(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -206,7 +218,7 @@ const Home = () => {
         addToQueue('ADD_TASK', '/tasks', 'POST', { text: textToSubmit }, tempId);
         await syncToCalendar(updatedTasks, waterGlasses);
       } else {
-        const token = localStorage.getItem('token');
+        const token = getToken();
         const response = await fetch(`${API_URL}/tasks`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -245,7 +257,7 @@ const Home = () => {
         addToQueue('TOGGLE_TASK', `/tasks/${taskId}`, 'PUT');
         await syncToCalendar(updatedTasks, waterGlasses);
       } else {
-        const token = localStorage.getItem('token');
+        const token = getToken();
         await fetch(`${API_URL}/tasks/${taskId}`, { method: 'PUT', headers: { 'Authorization': `Bearer ${token}` } });
         await syncToCalendar(updatedTasks, waterGlasses);
       }
@@ -270,7 +282,7 @@ const Home = () => {
         addToQueue('DELETE_TASK', `/tasks/${taskId}`, 'DELETE');
         await syncToCalendar(filteredTasks, waterGlasses);
       } else {
-        const token = localStorage.getItem('token');
+        const token = getToken();
         await fetch(`${API_URL}/tasks/${taskId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
         await syncToCalendar(filteredTasks, waterGlasses);
       }
@@ -301,21 +313,21 @@ const Home = () => {
         return {
           border: '1px solid #10b981',
           background: isDarkMode ? 'rgba(16, 185, 129, 0.1)' : '#f0fdf4',
-          title: '✨ Cloud Synchronized',
+          title: 'âœ¨ Cloud Synchronized',
           desc: 'Your metrics are secure and updated.'
         };
       case 'reconnecting':
         return {
           border: '1px solid #f59e0b',
           background: isDarkMode ? 'rgba(245, 158, 11, 0.1)' : '#fffbeb',
-          title: `🔄 Replaying Outbox Queue (${queueCount})`,
+          title: `ðŸ”„ Replaying Outbox Queue (${queueCount})`,
           desc: 'Uploading staged actions to the server...'
         };
       case 'offline':
         return {
           border: '1px solid #ef4444',
           background: isDarkMode ? 'rgba(239, 68, 68, 0.1)' : '#fef2f2',
-          title: queueCount > 0 ? `📦 Staging Changes (${queueCount} Queued)` : '💾 Operating Offline',
+          title: queueCount > 0 ? `ðŸ“¦ Staging Changes (${queueCount} Queued)` : 'ðŸ’¾ Operating Offline',
           desc: queueCount > 0
             ? 'Modifications are running on local snapshots and will auto-sync.'
             : 'Serving high-speed local instances.'
@@ -326,10 +338,10 @@ const Home = () => {
 
   const vibe = getVibeStatusCard();
   const hour = time.getHours();
-  let greeting = 'Good Night 🌙';
-  if (hour >= 5 && hour < 12) greeting = 'Good Morning ☀️';
-  else if (hour >= 12 && hour < 17) greeting = 'Good Afternoon 🌤️';
-  else if (hour >= 17 && hour < 21) greeting = 'Good Evening 🌇';
+  let greeting = 'Good Night ðŸŒ™';
+  if (hour >= 5 && hour < 12) greeting = 'Good Morning â˜€ï¸';
+  else if (hour >= 12 && hour < 17) greeting = 'Good Afternoon ðŸŒ¤ï¸';
+  else if (hour >= 17 && hour < 21) greeting = 'Good Evening ðŸŒ‡';
 
   const textColor = isDarkMode ? '#f8fafc' : '#0f172a';
   const cardBg = isDarkMode ? '#1e293b' : '#ffffff';
@@ -340,7 +352,7 @@ const Home = () => {
       <div style={{ marginBottom: '1.5rem', textAlign: 'center' }}>
         <h1 style={{ fontSize: '2rem', margin: '0 0 0.5rem 0', fontWeight: '800' }}>{greeting}</h1>
         <p style={{ fontSize: '1.1rem', color: isDarkMode ? '#94a3b8' : '#64748b', margin: 0, fontWeight: '500' }}>
-          {time.toLocaleDateString('en-IN', { weekday: 'long', month: 'long', day: 'numeric' })} • {time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+          {time.toLocaleDateString('en-IN', { weekday: 'long', month: 'long', day: 'numeric' })} â€¢ {time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
         </p>
       </div>
 
@@ -353,7 +365,7 @@ const Home = () => {
 
       <div style={{ background: cardBg, padding: '1.5rem', borderRadius: '16px', border: `1px solid ${borderColor}`, marginBottom: '2rem' }}>
         <h3 style={{ margin: '0 0 1.2rem 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: '1.2rem' }}>💧 Daily Hydration</span>
+          <span style={{ fontSize: '1.2rem' }}>ðŸ’§ Daily Hydration</span>
           <span style={{ fontSize: '1rem', fontWeight: 'bold', color: '#3b82f6' }}>{waterGlasses} / {DAILY_GOAL}</span>
         </h3>
         <div className="water-grid">
@@ -369,14 +381,14 @@ const Home = () => {
                 display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem'
               }}
             >
-              {index < waterGlasses ? '🧊' : ''}
+              {index < waterGlasses ? 'ðŸ§Š' : ''}
             </button>
           ))}
         </div>
       </div>
 
       <div style={{ background: cardBg, padding: '1.5rem', borderRadius: '16px', border: `1px solid ${borderColor}` }}>
-        <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.2rem' }}>✅ Today's Focus</h3>
+        <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.2rem' }}>âœ… Today's Focus</h3>
         <form onSubmit={handleAddTask} className="task-form">
           <input
             type="text"
@@ -402,7 +414,7 @@ const Home = () => {
                     {task.text}
                   </span>
                 </div>
-                <button className="delete-btn" onClick={(e) => { e.stopPropagation(); handleDeleteTask(task._id); }}>🗑️</button>
+                <button className="delete-btn" onClick={(e) => { e.stopPropagation(); handleDeleteTask(task._id); }}>ðŸ—‘ï¸</button>
               </div>
             ))}
           </div>
