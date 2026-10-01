@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import api from '../api/axios';
 import { db } from '../db/db';
 
@@ -57,6 +57,17 @@ export const AuthProvider = ({ children }) => {
     db.auth.delete('current').catch(() => {});
     setUser(null);
   };
+
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      localStorage.removeItem('user');
+      localStorage.removeItem('token');
+      db.auth.delete('current').catch(() => {});
+      setUser(null);
+    };
+    window.addEventListener('auth-unauthorized', handleUnauthorized);
+    return () => window.removeEventListener('auth-unauthorized', handleUnauthorized);
+  }, []);
 
   return (
     <AuthContext.Provider value={{ user, token: user?.token, login, register, logout }}>

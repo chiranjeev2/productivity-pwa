@@ -1,10 +1,11 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { getApiUrl } from '../utils/apiConfig';
 
 const SyncContext = createContext();
 
 export const SyncProvider = ({ children }) => {
   const [networkStatus, setNetworkStatus] = useState(navigator.onLine ? 'live' : 'offline');
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
+  const API_URL = getApiUrl();
 
   // Prevents two overlapping runs of processSyncQueue (e.g. triggered by
   // both the mount effect and the 'online' event firing close together),
@@ -21,11 +22,18 @@ export const SyncProvider = ({ children }) => {
       : `${Date.now()}_${Math.random().toString(36).slice(2)}`
   );
 
+  const processSyncQueueRef = useRef();
+
   const addToQueue = useCallback((action, endpoint, method, payload = null, tempId = null) => {
     const queue = getQueue();
     const newRequest = { id: genId(), action, endpoint, method, payload, tempId };
     queue.push(newRequest);
     saveQueue(queue);
+
+    // If online, kick off queue replay immediately
+    if (navigator.onLine && processSyncQueueRef.current) {
+      setTimeout(() => processSyncQueueRef.current(), 10);
+    }
   }, []);
 
   const processSyncQueue = useCallback(async () => {
@@ -85,7 +93,14 @@ export const SyncProvider = ({ children }) => {
             saveQueue(updatedQueue);
             queue = updatedQueue;
           }
-          // Data/Validation Errors (400-499) mean the server IS online.
+          // 401 Unauthorized means session expired/invalid. DO NOT evict the queue!
+          if (response.status === 401) {
+            console.warn("Outbox replay paused: token unauthorized or expired.");
+            setNetworkStatus('offline');
+            window.dispatchEvent(new Event('auth-unauthorized'));
+            return;
+          }
+          // Data/Validation Errors (400, 422) mean the server rejected payload format.
           // Evict the bad item instead of locking the application offline forever.
           else if (response.status >= 400 && response.status < 500) {
             console.warn(`Evicting invalid outbox item [${req.action}] due to client error status: ${response.status}`);
@@ -113,6 +128,10 @@ export const SyncProvider = ({ children }) => {
       isSyncingRef.current = false;
     }
   }, [API_URL]);
+
+  useEffect(() => {
+    processSyncQueueRef.current = processSyncQueue;
+  }, [processSyncQueue]);
 
   useEffect(() => {
     const handleOnline = () => {
@@ -143,10 +162,11 @@ export const SyncProvider = ({ children }) => {
   const value = useMemo(() => ({
     networkStatus,
     addToQueue,
+    processSyncQueue,
     saveSnapshot,
     getSnapshot,
     isOffline: networkStatus === 'offline'
-  }), [networkStatus, addToQueue, saveSnapshot, getSnapshot]);
+  }), [networkStatus, addToQueue, processSyncQueue, saveSnapshot, getSnapshot]);
 
   return (
     <SyncContext.Provider value={value}>

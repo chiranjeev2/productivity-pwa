@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useSync } from '../context/SyncContext';
+import { getApiUrl } from '../utils/apiConfig';
 import './Home.css';
 
 const getLocalDateString = () => {
@@ -16,7 +17,8 @@ const Home = () => {
   const { isDarkMode } = useTheme();
   const { user } = useAuth();
   const { networkStatus, addToQueue, saveSnapshot, getSnapshot } = useSync();
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
+  const API_URL = getApiUrl();
+
 
   const [time, setTime] = useState(new Date());
   const DAILY_GOAL = 8;
@@ -39,6 +41,7 @@ const Home = () => {
 
   const syncToCalendar = useCallback(async (nextTasks, nextWater) => {
     const currentDate = getLocalDateString();
+    saveSnapshot(`water_${currentDate}`, nextWater);
     const payload = {
       dateString: currentDate,
       waterIntake: nextWater,
@@ -47,7 +50,6 @@ const Home = () => {
     };
 
     if (!isLive) {
-      saveSnapshot(`water_${currentDate}`, nextWater);
       addToQueue('SYNC_WATER', '/calendar/sync', 'POST', payload);
       updateQueueCount();
       return;
@@ -56,13 +58,17 @@ const Home = () => {
     try {
       const token = localStorage.getItem('token');
       if (!token) return;
-      await fetch(`${API_URL}/calendar/sync`, {
+      const res = await fetch(`${API_URL}/calendar/sync`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify(payload)
       });
+      if (res.status === 401) {
+        window.dispatchEvent(new Event('auth-unauthorized'));
+      }
     } catch (e) {
-      console.error("Calendar sync failure", e);
+      addToQueue('SYNC_WATER', '/calendar/sync', 'POST', payload);
+      updateQueueCount();
     }
   }, [API_URL, isLive, saveSnapshot, addToQueue, updateQueueCount]);
 
@@ -131,6 +137,11 @@ const Home = () => {
         fetch(`${API_URL}/calendar`, { headers: { 'Authorization': `Bearer ${token}` } })
       ]);
 
+      if (taskRes.status === 401 || calRes.status === 401) {
+        window.dispatchEvent(new Event('auth-unauthorized'));
+        return;
+      }
+
       if (mySeq !== fetchSeq.current || pendingMutations.current > 0) return;
 
       if (taskRes.ok) {
@@ -170,7 +181,7 @@ const Home = () => {
       updateQueueCount();
     }, 5000);
 
-    const handleFocusSync = () => { if (networkStatus === 'live') fetchDashboardData(false); updateQueueCount(); };
+    const handleFocusSync = () => { fetchDashboardData(false); updateQueueCount(); };
     window.addEventListener('focus', handleFocusSync);
     window.addEventListener('sync-complete', handleFocusSync);
 
@@ -212,6 +223,10 @@ const Home = () => {
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify({ text: textToSubmit })
         });
+        if (response.status === 401) {
+          window.dispatchEvent(new Event('auth-unauthorized'));
+          return;
+        }
         if (response.ok) {
           const serverTask = await response.json();
           setTasks(prev => {
@@ -223,11 +238,9 @@ const Home = () => {
         await syncToCalendar(updatedTasks, waterGlasses);
       }
     } catch (error) {
-      setTasks(prev => {
-        const reverted = prev.filter(t => t._id !== tempId);
-        saveSnapshot('tasks', reverted);
-        return reverted;
-      });
+      // Opportunistic fallback: If live fetch fails, stage into outbox queue
+      addToQueue('ADD_TASK', '/tasks', 'POST', { text: textToSubmit }, tempId);
+      updateQueueCount();
     } finally {
       pendingMutations.current--;
     }
@@ -246,12 +259,16 @@ const Home = () => {
         await syncToCalendar(updatedTasks, waterGlasses);
       } else {
         const token = localStorage.getItem('token');
-        await fetch(`${API_URL}/tasks/${taskId}`, { method: 'PUT', headers: { 'Authorization': `Bearer ${token}` } });
+        const response = await fetch(`${API_URL}/tasks/${taskId}`, { method: 'PUT', headers: { 'Authorization': `Bearer ${token}` } });
+        if (response.status === 401) {
+          window.dispatchEvent(new Event('auth-unauthorized'));
+          return;
+        }
         await syncToCalendar(updatedTasks, waterGlasses);
       }
     } catch (error) {
-      setTasks(tasks);
-      saveSnapshot('tasks', tasks);
+      addToQueue('TOGGLE_TASK', `/tasks/${taskId}`, 'PUT');
+      updateQueueCount();
     } finally {
       pendingMutations.current--;
     }
@@ -259,7 +276,6 @@ const Home = () => {
 
   const handleDeleteTask = async (taskId) => {
     pendingMutations.current++;
-    const backupTasks = [...tasks];
     const filteredTasks = tasks.filter(t => t._id !== taskId);
 
     setTasks(filteredTasks);
@@ -271,12 +287,16 @@ const Home = () => {
         await syncToCalendar(filteredTasks, waterGlasses);
       } else {
         const token = localStorage.getItem('token');
-        await fetch(`${API_URL}/tasks/${taskId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+        const response = await fetch(`${API_URL}/tasks/${taskId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+        if (response.status === 401) {
+          window.dispatchEvent(new Event('auth-unauthorized'));
+          return;
+        }
         await syncToCalendar(filteredTasks, waterGlasses);
       }
     } catch (error) {
-      setTasks(backupTasks);
-      saveSnapshot('tasks', backupTasks);
+      addToQueue('DELETE_TASK', `/tasks/${taskId}`, 'DELETE');
+      updateQueueCount();
     } finally {
       pendingMutations.current--;
     }

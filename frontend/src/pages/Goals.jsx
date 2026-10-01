@@ -2,13 +2,14 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useSync } from '../context/SyncContext';
+import { getApiUrl } from '../utils/apiConfig';
 import './Goals.css';
 
 const Goals = () => {
   const { isDarkMode } = useTheme();
   const { user } = useAuth();
   const { isOffline, addToQueue, saveSnapshot, getSnapshot } = useSync();
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
+  const API_URL = getApiUrl();
 
   const [goals, setGoals] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -39,6 +40,10 @@ const Goals = () => {
       const response = await fetch(`${API_URL}/goals`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
+      if (response.status === 401) {
+        window.dispatchEvent(new Event('auth-unauthorized'));
+        return;
+      }
       if (response.ok) {
         const data = await response.json();
         if (Array.isArray(data)) {
@@ -67,7 +72,7 @@ const Goals = () => {
       if (!isOffline) fetchGoals(false);
     }, 5000);
 
-    const handleFocusSync = () => { if (!isOffline) fetchGoals(false); };
+    const handleFocusSync = () => { fetchGoals(false); };
     window.addEventListener('focus', handleFocusSync);
     window.addEventListener('sync-complete', handleFocusSync);
 
@@ -115,6 +120,11 @@ const Goals = () => {
         body: JSON.stringify({ title: titleToSubmit, type: typeToSubmit, progress: 0, color: assignedColor })
       });
 
+      if (response.status === 401) {
+        window.dispatchEvent(new Event('auth-unauthorized'));
+        return;
+      }
+
       if (response.ok) {
         const addedGoal = await response.json();
         setGoals(prev => {
@@ -124,7 +134,8 @@ const Goals = () => {
         });
       }
     } catch (error) {
-      setGoals(prev => prev.filter(g => g._id !== tempId));
+      // Stage to outbox on network failure
+      addToQueue('ADD_GOAL', '/goals', 'POST', { title: titleToSubmit, type: typeToSubmit, progress: 0, color: assignedColor }, tempId);
     }
   };
 
@@ -132,7 +143,6 @@ const Goals = () => {
     e.stopPropagation();
     if (!window.confirm("Are you sure you want to delete this goal?")) return;
 
-    const backupGoals = [...goals];
     const filteredGoals = goals.filter(g => g._id !== goalId);
     setGoals(filteredGoals);
     saveSnapshot('goals', filteredGoals);
@@ -144,12 +154,16 @@ const Goals = () => {
 
     try {
       const token = localStorage.getItem('token');
-      await fetch(`${API_URL}/goals/${goalId}`, {
+      const response = await fetch(`${API_URL}/goals/${goalId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
+      if (response.status === 401) {
+        window.dispatchEvent(new Event('auth-unauthorized'));
+        return;
+      }
     } catch (error) {
-      setGoals(backupGoals);
+      addToQueue('DELETE_GOAL', `/goals/${goalId}`, 'DELETE');
     }
   };
 
@@ -162,7 +176,6 @@ const Goals = () => {
   const saveProgressUpdate = async () => {
     if (!activeGoal) return;
     
-    const previousGoals = [...goals];
     const updatedGoals = goals.map(g => g._id === activeGoal._id ? { ...g, progress: parseInt(sliderValue) } : g);
     setGoals(updatedGoals);
     saveSnapshot('goals', updatedGoals);
@@ -182,6 +195,11 @@ const Goals = () => {
         body: JSON.stringify({ progress: parseInt(sliderValue) })
       });
 
+      if (response.status === 401) {
+        window.dispatchEvent(new Event('auth-unauthorized'));
+        return;
+      }
+
       if (response.ok) {
         const updatedGoal = await response.json();
         setGoals(prev => {
@@ -191,7 +209,7 @@ const Goals = () => {
         });
       }
     } catch (error) {
-      setGoals(previousGoals);
+      addToQueue('UPDATE_GOAL', `/goals/${activeGoal._id}`, 'PUT', { progress: parseInt(sliderValue) });
     } finally {
       setActiveGoal(null);
     }

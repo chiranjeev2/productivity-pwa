@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useSync } from '../context/SyncContext';
+import { getApiUrl } from '../utils/apiConfig';
 
 const Calendar = () => {
   const { isDarkMode } = useTheme();
@@ -10,8 +11,9 @@ const Calendar = () => {
   
   const [logs, setLogs] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [, setTick] = useState(0);
   
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
+  const API_URL = getApiUrl();
   const isLive = networkStatus === 'live';
 
   const fetchCalendarData = useCallback(async (showLoading = false) => {
@@ -31,6 +33,12 @@ const Calendar = () => {
       const token = localStorage.getItem('token');
       if (!token) return;
       const res = await fetch(`${API_URL}/calendar`, { headers: { 'Authorization': `Bearer ${token}` }});
+      
+      if (res.status === 401) {
+        window.dispatchEvent(new Event('auth-unauthorized'));
+        return;
+      }
+
       if (res.ok) {
         const data = await res.json();
         setLogs(data);
@@ -43,21 +51,34 @@ const Calendar = () => {
     }
   }, [API_URL, user, isLive, getSnapshot, saveSnapshot]);
 
-  // 🔴 LOOP-FREE ISOLATION: Fetches only on mount or user state change
+  // Fetches only on mount or user state change
   useEffect(() => {
     if (user) fetchCalendarData(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
-  // 🔴 BACKGROUND POLL: Safely polls every 5s without causing render crashes
+  // Background poll and reactive sync listener
   useEffect(() => {
     if (!user) return;
     const interval = setInterval(() => {
       if (networkStatus === 'live') fetchCalendarData(false);
     }, 5000);
-    return () => clearInterval(interval);
+
+    const handleSync = () => {
+      setTick(t => t + 1); // Force re-render to evaluate local edge snapshots
+      if (networkStatus === 'live') fetchCalendarData(false);
+    };
+
+    window.addEventListener('focus', handleSync);
+    window.addEventListener('sync-complete', handleSync);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', handleSync);
+      window.removeEventListener('sync-complete', handleSync);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, networkStatus]);
+  }, [user, networkStatus, fetchCalendarData]);
 
   const textColor = isDarkMode ? '#f8fafc' : '#0f172a';
   const cardBg = isDarkMode ? '#1e293b' : '#ffffff';
@@ -68,6 +89,7 @@ const Calendar = () => {
   const currentMonth = today.getMonth();
   const currentYear = today.getFullYear();
   const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+  const todayString = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   
   const monthName = today.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
 
@@ -102,23 +124,49 @@ const Calendar = () => {
 
           {/* Calendar Days */}
           {gridDays.map(({ day, dateString, log }) => {
-            const isToday = dateString === `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+            const isToday = dateString === todayString;
             
-            // Edge-Computed Color Logic
+            // Client-Side Edge Computing Interceptor (ProdPro v2.1 Architecture)
+            let cellStatus = 'none';
+            let cellWater = 0;
+            let cellTasksCompleted = 0;
+            let cellTotalTasks = 0;
+
+            if (isToday) {
+              // Edge computing interceptor reads directly from localStorage snapshots
+              const localTasks = getSnapshot('tasks') || [];
+              const localWater = getSnapshot(`water_${todayString}`) || 0;
+              cellTotalTasks = localTasks.length;
+              cellTasksCompleted = localTasks.filter(t => t.completed).length;
+              cellWater = localWater;
+
+              const waterGoalMet = localWater >= 8;
+              const tasksGoalMet = cellTotalTasks > 0 ? cellTasksCompleted === cellTotalTasks : true;
+
+              if (localWater > 0 || cellTasksCompleted > 0) {
+                if (waterGoalMet && tasksGoalMet) cellStatus = 'perfect';
+                else cellStatus = 'good';
+              }
+            } else if (log) {
+              cellWater = log.waterIntake || 0;
+              cellTasksCompleted = log.tasksCompleted || 0;
+              cellTotalTasks = log.totalTasks || 0;
+              if (log.status === 'perfect' || (cellWater >= 8 && (cellTotalTasks > 0 ? cellTasksCompleted === cellTotalTasks : true))) {
+                cellStatus = 'perfect';
+              } else if (log.status === 'good' || cellWater > 0 || cellTasksCompleted > 0) {
+                cellStatus = 'good';
+              }
+            }
+
             let bgColor = isDarkMode ? '#334155' : '#f1f5f9';
             let dotColor = null;
 
-            if (log) {
-              const waterMet = log.waterIntake >= 8;
-              const tasksMet = log.totalTasks > 0 && log.tasksCompleted === log.totalTasks;
-              
-              if (waterMet && tasksMet) {
-                bgColor = '#10b981'; // Green (Perfect Day)
-                dotColor = '#fff';
-              } else if (log.waterIntake > 0 || log.tasksCompleted > 0) {
-                bgColor = '#f59e0b'; // Yellow (Partial Day)
-                dotColor = '#fff';
-              }
+            if (cellStatus === 'perfect') {
+              bgColor = '#10b981'; // Green (Perfect Day)
+              dotColor = '#fff';
+            } else if (cellStatus === 'good') {
+              bgColor = '#3b82f6'; // Blue (Good Day)
+              dotColor = '#fff';
             }
 
             return (
@@ -134,9 +182,10 @@ const Calendar = () => {
                   borderRadius: '12px',
                   fontWeight: 'bold',
                   border: isToday ? `2px solid ${isDarkMode ? '#fff' : '#0f172a'}` : 'none',
-                  position: 'relative'
+                  position: 'relative',
+                  transition: 'background-color 0.3s ease'
                 }}
-                title={log ? `Water: ${log.waterIntake}/8, Tasks: ${log.tasksCompleted}/${log.totalTasks}` : 'No data'}
+                title={isToday || log ? `Water: ${cellWater}/8, Tasks: ${cellTasksCompleted}/${cellTotalTasks}` : 'No data'}
               >
                 {day}
               </div>
@@ -150,7 +199,7 @@ const Calendar = () => {
           <div style={{ width: '16px', height: '16px', borderRadius: '4px', background: '#10b981' }}></div> Perfect
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div style={{ width: '16px', height: '16px', borderRadius: '4px', background: '#f59e0b' }}></div> Partial
+          <div style={{ width: '16px', height: '16px', borderRadius: '4px', background: '#3b82f6' }}></div> Good
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <div style={{ width: '16px', height: '16px', borderRadius: '4px', background: isDarkMode ? '#334155' : '#f1f5f9' }}></div> None

@@ -18,6 +18,10 @@ const dailyLogSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  totalTasks: {
+    type: Number,
+    default: 0
+  },
   status: {
     type: String,
     enum: ['perfect', 'good', 'missed', 'empty'],

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { io } from 'socket.io-client';
 import { useAuth } from './AuthContext';
+import { getApiUrl } from '../utils/apiConfig';
 
 const SocketContext = createContext();
 export const useSocket = () => useContext(SocketContext);
@@ -14,8 +15,8 @@ export const SocketProvider = ({ children }) => {
     // Only connect if the user is actually logged in
     if (!user) return;
 
-    // Grab the Vercel URL and strip the api path to get the root server URL
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
+    // Grab the API URL and strip the /api/v1 path to get the root server URL
+    const apiUrl = getApiUrl();
     const backendUrl = apiUrl.replace('/api/v1', '');
 
     // Initialize the connection WITH cross-origin production settings
