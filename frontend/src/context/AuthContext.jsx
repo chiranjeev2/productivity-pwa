@@ -18,7 +18,17 @@ const persistAuthToDB = async (token) => {
 };
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(() => JSON.parse(localStorage.getItem('user')) || null);
+  const [user, setUser] = useState(() => {
+    try {
+      const savedUser = JSON.parse(localStorage.getItem('user'));
+      if (savedUser?.token && !localStorage.getItem('token')) {
+        localStorage.setItem('token', savedUser.token);
+      }
+      return savedUser || null;
+    } catch {
+      return null;
+    }
+  });
 
   const login = async (email, password) => {
     const { data } = await api.post('/auth/login', { email, password });

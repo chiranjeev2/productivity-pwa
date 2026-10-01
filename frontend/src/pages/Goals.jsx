@@ -1,25 +1,14 @@
-﻿import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useSync } from '../context/SyncContext';
 import './Goals.css';
 
-// Reads token from either storage key so old sessions don't cause 401.
-const getToken = () => {
-  const standalone = localStorage.getItem('token');
-  if (standalone) return standalone;
-  try {
-    const user = JSON.parse(localStorage.getItem('user'));
-    return user?.token || null;
-  } catch { return null; }
-};
-
 const Goals = () => {
   const { isDarkMode } = useTheme();
   const { user } = useAuth();
   const { isOffline, addToQueue, saveSnapshot, getSnapshot } = useSync();
-  const API_URL = import.meta.env.VITE_API_URL || 'https://prodpro-backend.onrender.com/api/v1';
-
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
 
   const [goals, setGoals] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -45,7 +34,7 @@ const Goals = () => {
     }
 
     try {
-      const token = getToken();
+      const token = localStorage.getItem('token');
       if (!token) return;
       const response = await fetch(`${API_URL}/goals`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -64,13 +53,13 @@ const Goals = () => {
     }
   }, [API_URL, user, isOffline, getSnapshot, saveSnapshot]);
 
-  // ðŸ”´ FIXED: Severed the Infinite Loop by isolating the dependency array
+  // 🔴 FIXED: Severed the Infinite Loop by isolating the dependency array
   useEffect(() => {
     if (user) fetchGoals(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
-  // ðŸ”´ FIXED: Background polling is strictly isolated to prevent re-render loops
+  // 🔴 FIXED: Background polling is strictly isolated to prevent re-render loops
   useEffect(() => {
     if (!user) return;
 
@@ -119,7 +108,7 @@ const Goals = () => {
     }
 
     try {
-      const token = getToken();
+      const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/goals`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -154,7 +143,7 @@ const Goals = () => {
     }
 
     try {
-      const token = getToken();
+      const token = localStorage.getItem('token');
       await fetch(`${API_URL}/goals/${goalId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
@@ -186,7 +175,7 @@ const Goals = () => {
     }
 
     try {
-      const token = getToken();
+      const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/goals/${activeGoal._id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -220,7 +209,7 @@ const Goals = () => {
   return (
     <div style={{ color: textColor, maxWidth: '600px', margin: '0 auto', paddingBottom: '100px', position: 'relative' }}>
       <div style={{ marginBottom: '2rem', textAlign: 'center' }}>
-        <h1 style={{ fontSize: '2rem', margin: '0 0 0.5rem 0', fontWeight: '800' }}>ðŸŽ¯ Vision Board</h1>
+        <h1 style={{ fontSize: '2rem', margin: '0 0 0.5rem 0', fontWeight: '800' }}>🎯 Vision Board</h1>
         <p style={{ fontSize: '1.1rem', color: mutedText, margin: 0, fontWeight: '500' }}>Track your strategic milestones.</p>
       </div>
 
@@ -248,7 +237,7 @@ const Goals = () => {
       ) : (
         <>
           <div style={{ marginBottom: '2rem' }}>
-            <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.2rem' }}>ðŸš€ Short-Term</h3>
+            <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.2rem' }}>🚀 Short-Term</h3>
             {shortTermGoals.length === 0 && <p style={{ color: mutedText, fontStyle: 'italic' }}>No short-term goals yet.</p>}
             {shortTermGoals.map(goal => (
               <div key={goal._id} onClick={() => openProgressModal(goal)} style={{ background: cardBg, border: `1px solid ${borderColor}`, padding: '1rem', borderRadius: '12px', marginBottom: '1rem', cursor: 'pointer' }}>
@@ -257,7 +246,7 @@ const Goals = () => {
                     <span style={{ fontWeight: '600', lineHeight: '1.2' }}>{goal.title}</span>
                     <span style={{ fontWeight: 'bold', color: goal.color, fontSize: '0.9rem' }}>{goal.progress}% Completed</span>
                   </div>
-                  <button className="goal-delete-btn" onClick={(e) => handleDeleteGoal(goal._id, e)}>ðŸ—‘ï¸</button>
+                  <button className="goal-delete-btn" onClick={(e) => handleDeleteGoal(goal._id, e)}>🗑️</button>
                 </div>
                 <div style={{ height: '8px', borderRadius: '4px', background: trackBg, overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${goal.progress}%`, background: goal.color, transition: 'width 0.5s ease-out' }}></div>
@@ -267,7 +256,7 @@ const Goals = () => {
           </div>
 
           <div>
-            <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.2rem' }}>ðŸ”ï¸ Long-Term</h3>
+            <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.2rem' }}>🏔️ Long-Term</h3>
             {longTermGoals.length === 0 && <p style={{ color: mutedText, fontStyle: 'italic' }}>No long-term goals yet.</p>}
             {longTermGoals.map(goal => (
               <div key={goal._id} onClick={() => openProgressModal(goal)} style={{ background: cardBg, border: `1px solid ${borderColor}`, padding: '1rem', borderRadius: '12px', marginBottom: '1rem', cursor: 'pointer' }}>
@@ -276,7 +265,7 @@ const Goals = () => {
                     <span style={{ fontWeight: '600', lineHeight: '1.2' }}>{goal.title}</span>
                     <span style={{ fontWeight: 'bold', color: goal.color, fontSize: '0.9rem' }}>{goal.progress}% Completed</span>
                   </div>
-                  <button className="goal-delete-btn" onClick={(e) => handleDeleteGoal(goal._id, e)}>ðŸ—‘ï¸</button>
+                  <button className="goal-delete-btn" onClick={(e) => handleDeleteGoal(goal._id, e)}>🗑️</button>
                 </div>
                 <div style={{ height: '8px', borderRadius: '4px', background: trackBg, overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${goal.progress}%`, background: goal.color, transition: 'width 0.5s ease-out' }}></div>
